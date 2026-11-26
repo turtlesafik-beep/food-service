@@ -1,0 +1,18 @@
+# Production override для VPS.
+# Запуск:
+#   docker compose -f docker-compose.yml -f compose.production.yaml up -d --build
+#
+# Порт 80 наследуется из основного compose-файла, здесь добавляется 443.
+# Монтирование default.conf с тем же target заменяет локальный конфиг.
+# На сервере nginx/default.local.conf не нужен.
+services:
+  nginx:
+    ports:
+      - "443:443"
+    volumes:
+      - ./nginx/default.conf:/etc/nginx/conf.d/default.conf:ro
+      - ./web:/usr/share/nginx/html:ro
+      # HTTP-01 challenge для Let's Encrypt.
+      - ./certbot/www:/var/www/certbot:ro
+      # Сертификаты Let's Encrypt для этапа HTTPS.
+      - ./certbot/conf:/etc/letsencrypt:ro

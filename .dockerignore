@@ -9,4 +9,8 @@ data/
 
 .env
 
+# Локальная конфигурация Nginx и данные certbot не нужны в Docker build context
+nginx/default.local.conf
+certbot/
+
 README.md

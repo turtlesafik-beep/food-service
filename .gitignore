@@ -9,6 +9,11 @@ data/
 .env.*
 !.env.example
 
+# Let's Encrypt / certbot
+certbot/conf/
+certbot/www/*
+!certbot/www/.gitkeep
+
 # IDE
 .vscode/
 .idea/
