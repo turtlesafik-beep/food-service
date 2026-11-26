@@ -167,6 +167,7 @@ func scanDishRows(rows *sql.Rows) ([]Dish, error) {
 			&available,
 			&hasRecipe,
 			&dish.Emoji,
+			&dish.PhotoURL,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan dish: %w", err)
@@ -260,7 +261,8 @@ func (s *Service) GetDishes() ([]Dish, error) {
 			EXISTS(
 				SELECT 1 FROM dish_ingredients di WHERE di.dish_id = dishes.id
 			) AS has_recipe,
-			emoji
+			emoji,
+			photo_url
 		FROM dishes
 		ORDER BY id
 	`)
@@ -284,7 +286,8 @@ func (s *Service) GetPublicDishes() ([]Dish, error) {
 			EXISTS(
 				SELECT 1 FROM dish_ingredients di WHERE di.dish_id = dishes.id
 			) AS has_recipe,
-			emoji
+			emoji,
+			photo_url
 		FROM dishes
 		WHERE is_available = 1
 		  AND EXISTS(
@@ -453,20 +456,20 @@ func (s *Service) SetDishAvailability(id int64, available bool) error {
 	return nil
 }
 
-func (s *Service) DeleteDish(id int64) error {
+func (s *Service) DeleteDish(id int64) (string, error) {
 	tx, err := s.DB.Begin()
 	if err != nil {
-		return fmt.Errorf("begin dish transaction: %w", err)
+		return "", fmt.Errorf("begin dish transaction: %w", err)
 	}
 	defer tx.Rollback()
 
-	var exists int
-	err = tx.QueryRow(`SELECT 1 FROM dishes WHERE id = ?`, id).Scan(&exists)
+	var photoURL string
+	err = tx.QueryRow(`SELECT photo_url FROM dishes WHERE id = ?`, id).Scan(&photoURL)
 	if errors.Is(err, sql.ErrNoRows) {
-		return ErrDishNotFound
+		return "", ErrDishNotFound
 	}
 	if err != nil {
-		return fmt.Errorf("check dish: %w", err)
+		return "", fmt.Errorf("check dish: %w", err)
 	}
 
 	if _, err := tx.Exec(`
@@ -474,25 +477,64 @@ func (s *Service) DeleteDish(id int64) error {
 		SET dish_id = NULL
 		WHERE dish_id = ?
 	`, id); err != nil {
-		return fmt.Errorf("detach dish from orders: %w", err)
+		return "", fmt.Errorf("detach dish from orders: %w", err)
 	}
 
 	if _, err := tx.Exec(`
 		DELETE FROM dish_ingredients
 		WHERE dish_id = ?
 	`, id); err != nil {
-		return fmt.Errorf("delete dish recipe: %w", err)
+		return "", fmt.Errorf("delete dish recipe: %w", err)
 	}
 
 	if _, err := tx.Exec(`DELETE FROM dishes WHERE id = ?`, id); err != nil {
-		return fmt.Errorf("delete dish: %w", err)
+		return "", fmt.Errorf("delete dish: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("commit dish transaction: %w", err)
+		return "", fmt.Errorf("commit dish transaction: %w", err)
 	}
 
-	return nil
+	return photoURL, nil
+}
+
+func (s *Service) updateDishPhoto(id int64, photoURL string) (string, error) {
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return "", fmt.Errorf("begin dish photo transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	var oldPhotoURL string
+	err = tx.QueryRow(`SELECT photo_url FROM dishes WHERE id = ?`, id).Scan(&oldPhotoURL)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", ErrDishNotFound
+	}
+	if err != nil {
+		return "", fmt.Errorf("check dish: %w", err)
+	}
+
+	if _, err := tx.Exec(`
+		UPDATE dishes
+		SET photo_url = ?
+		WHERE id = ?
+	`, photoURL, id); err != nil {
+		return "", fmt.Errorf("update dish photo: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("commit dish photo transaction: %w", err)
+	}
+
+	return oldPhotoURL, nil
+}
+
+func (s *Service) SetDishPhoto(id int64, photoURL string) (string, error) {
+	return s.updateDishPhoto(id, photoURL)
+}
+
+func (s *Service) ClearDishPhoto(id int64) (string, error) {
+	return s.updateDishPhoto(id, "")
 }
 
 func (s *Service) GetIngredients() ([]Ingredient, error) {

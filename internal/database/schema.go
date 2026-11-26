@@ -14,7 +14,8 @@ func InitSchema(db *sql.DB) error {
 		weight_grams INTEGER CHECK(weight_grams > 0),
 		price INTEGER NOT NULL CHECK(price >= 0),
 		is_available INTEGER NOT NULL DEFAULT 1,
-		emoji TEXT NOT NULL DEFAULT '🍽️'
+		emoji TEXT NOT NULL DEFAULT '🍽️',
+		photo_url TEXT NOT NULL DEFAULT ''
 	);
 
 	CREATE TABLE IF NOT EXISTS ingredients (
@@ -85,6 +86,9 @@ func InitSchema(db *sql.DB) error {
 	// CREATE TABLE IF NOT EXISTS не добавляет новые колонки в уже существующую БД.
 	if err := ensureColumn(db, "orders", "token", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return fmt.Errorf("add orders.token column: %w", err)
+	}
+	if err := ensureColumn(db, "dishes", "photo_url", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return fmt.Errorf("add dishes.photo_url column: %w", err)
 	}
 
 	return nil

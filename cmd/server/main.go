@@ -31,8 +31,14 @@ func main() {
 		DB: db,
 	}
 
+	uploadDir := os.Getenv("UPLOAD_DIR")
+	if uploadDir == "" {
+		uploadDir = "data/uploads/dishes"
+	}
+
 	productHandler := &products.Handler{
-		Service: productService,
+		Service:   productService,
+		UploadDir: uploadDir,
 	}
 
 	orderService := &orders.Service{
@@ -71,6 +77,8 @@ func main() {
 
 	http.HandleFunc("GET /api/dishes", productHandler.GetPublicDishes)
 
+	http.HandleFunc("GET /media/dishes/{filename}", productHandler.ServeDishPhoto)
+
 	http.HandleFunc("GET /api/admin/orders", adminAuth(orderHandler.GetOrders))
 
 	http.HandleFunc("GET /api/admin/orders/{id}", adminAuth(orderHandler.GetAdminOrder))
@@ -82,6 +90,18 @@ func main() {
 				productHandler.GetRecipe(w, r)
 			case http.MethodPut:
 				productHandler.UpdateRecipe(w, r)
+			default:
+				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			}
+			return
+		}
+
+		if strings.HasSuffix(r.URL.Path, "/photo") {
+			switch r.Method {
+			case http.MethodPost:
+				productHandler.UploadDishPhoto(w, r)
+			case http.MethodDelete:
+				productHandler.DeleteDishPhoto(w, r)
 			default:
 				http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 			}

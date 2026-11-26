@@ -111,7 +111,8 @@ function renderOrder(order, token) {
                 <div class="order-item-name">${escapeHtml(item.dish_name)}</div>
                 ${item.weight_grams ? `<div class="order-item-weight">${item.weight_grams} г</div>` : ""}
             </td>
-            <td class="num">${item.quantity} шт.</td>
+            <td class="num">${formatMoney(item.unit_price)}</td>
+            <td class="num">${item.quantity}</td>
             <td class="num">${formatMoney(item.line_total)}</td>
         </tr>
     `).join("");
@@ -125,7 +126,11 @@ function renderOrder(order, token) {
         checked = new Set();
     }
 
-    const ingredients = order.ingredients.map((ingredient) => {
+    const sortedIngredients = [...order.ingredients].sort((a, b) =>
+        a.name.localeCompare(b.name, "ru")
+    );
+
+    const ingredients = sortedIngredients.map((ingredient) => {
         const key = `${ingredient.name}|${ingredient.unit}`;
         const isChecked = checked.has(key) ? "checked" : "";
 
@@ -146,7 +151,7 @@ function renderOrder(order, token) {
         <article class="order-card">
             <header class="order-header">
                 <div>
-                    <div class="order-brand">Food Service</div>
+                    <div class="order-brand">Заказ</div>
                     <h1 class="order-title">Ваш заказ</h1>
                     <p class="order-subtitle">${formatDate(order.created_at)}</p>
                 </div>
@@ -163,7 +168,8 @@ function renderOrder(order, token) {
                         <thead>
                             <tr>
                                 <th>Блюдо</th>
-                                <th class="num">Количество</th>
+                                <th class="num">Цена</th>
+                                <th class="num">Кол-во</th>
                                 <th class="num">Сумма</th>
                             </tr>
                         </thead>

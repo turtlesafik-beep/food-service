@@ -289,8 +289,9 @@ function humanizeError(message) {
 
 async function api(path, options = {}) {
     const headers = new Headers(options.headers || {});
+    const isFormData = options.body instanceof FormData;
 
-    if (options.body !== undefined && !headers.has("Content-Type")) {
+    if (options.body !== undefined && !isFormData && !headers.has("Content-Type")) {
         headers.set("Content-Type", "application/json");
     }
 
@@ -848,6 +849,10 @@ function renderDishForm(dish, recipe) {
     const isEditing = Boolean(dish);
     const rows = recipe.length > 0 ? recipe : [{ name: "", quantity: "", unit: "g" }];
     const currentEmoji = String(dish?.emoji || "").trim() || DEFAULT_DISH_EMOJI;
+    const existingPhotoURL = String(dish?.photo_url || "").trim();
+    let selectedPhotoFile = null;
+    let removeExistingPhoto = false;
+    let selectedPhotoPreviewURL = "";
 
     const datalist = state.ingredients.map((ingredient) => (
         `<option value="${escapeHtml(ingredient.name)}"></option>`
@@ -930,6 +935,28 @@ function renderDishForm(dish, recipe) {
                 </div>
             </div>
 
+            <div class="form-field form-field-wide dish-photo-field" id="dish-photo-field">
+                <label for="dish-photo-input">Фотография блюда</label>
+
+                <div class="dish-photo-editor">
+                    <div class="dish-photo-preview" id="dish-photo-preview">
+                        ${existingPhotoURL
+                            ? `<img src="${escapeHtml(existingPhotoURL)}" alt="Фотография блюда">`
+                            : `<div class="dish-photo-empty">Фото не добавлено</div>`}
+                    </div>
+
+                    <div class="dish-photo-controls">
+                        <input id="dish-photo-input" type="file" accept="image/jpeg,image/png,image/webp">
+                        <button type="button" class="secondary-button" id="dish-photo-remove" disabled>
+                            Удалить фото
+                        </button>
+                        <p class="hint">
+                            JPEG, PNG или WebP, до 5 МБ. Фото необязательно: в меню оно показывается только при раскрытии блюда.
+                        </p>
+                    </div>
+                </div>
+            </div>
+
             <div class="form-field form-field-checkbox">
                 <label class="checkbox-label">
                     <input id="dish-available" type="checkbox" ${!dish || dish.is_available ? "checked" : ""}>
@@ -957,7 +984,8 @@ function renderDishForm(dish, recipe) {
         body,
         submitLabel: "Сохранить",
         wide: true,
-        onSubmit: async (form) => {            const name = form.querySelector("#dish-name").value.trim();
+        onSubmit: async (form) => {
+            const name = form.querySelector("#dish-name").value.trim();
             const description = form.querySelector("#dish-description").value.trim();
             const weightRaw = form.querySelector("#dish-weight").value.trim();
             const priceRaw = form.querySelector("#dish-price").value.trim();
@@ -1030,18 +1058,51 @@ function renderDishForm(dish, recipe) {
                 ingredients
             };
 
+            let savedDishId = dish?.id;
+            let savedMessage = "";
+
             if (isEditing) {
                 await api(`/api/admin/dishes/${dish.id}`, {
                     method: "PUT",
                     body: JSON.stringify(payload)
                 });
-                toast("Блюдо сохранено", "success");
+                savedMessage = "Блюдо сохранено";
             } else {
-                await api("/api/admin/dishes", {
+                const created = await api("/api/admin/dishes", {
                     method: "POST",
                     body: JSON.stringify(payload)
                 });
-                toast("Блюдо добавлено", "success");
+                savedDishId = created.id;
+                savedMessage = "Блюдо добавлено";
+            }
+
+            let photoError = "";
+
+            if (selectedPhotoFile) {
+                try {
+                    const formData = new FormData();
+                    formData.append("photo", selectedPhotoFile, selectedPhotoFile.name || "dish-photo");
+                    await api(`/api/admin/dishes/${savedDishId}/photo`, {
+                        method: "POST",
+                        body: formData
+                    });
+                } catch (error) {
+                    photoError = error.message;
+                }
+            } else if (removeExistingPhoto && existingPhotoURL) {
+                try {
+                    await api(`/api/admin/dishes/${savedDishId}/photo`, {
+                        method: "DELETE"
+                    });
+                } catch (error) {
+                    photoError = error.message;
+                }
+            }
+
+            toast(savedMessage, "success");
+
+            if (photoError) {
+                toast(`Фото не сохранено: ${humanizeError(photoError)}`, "error");
             }
 
             if (state.page === "dishes") {
@@ -1051,6 +1112,120 @@ function renderDishForm(dish, recipe) {
     });
 
     setupEmojiPicker(overlay, currentEmoji);
+
+    const photoInput = overlay.querySelector("#dish-photo-input");
+    const photoPreview = overlay.querySelector("#dish-photo-preview");
+    const photoRemoveButton = overlay.querySelector("#dish-photo-remove");
+
+    function revokeSelectedPhotoPreview() {
+        if (selectedPhotoPreviewURL) {
+            URL.revokeObjectURL(selectedPhotoPreviewURL);
+            selectedPhotoPreviewURL = "";
+        }
+    }
+
+    function updatePhotoRemoveButton() {
+        if (!photoRemoveButton) {
+            return;
+        }
+
+        if (selectedPhotoFile) {
+            photoRemoveButton.disabled = false;
+            photoRemoveButton.textContent = "Отменить выбор";
+        } else if (existingPhotoURL && !removeExistingPhoto) {
+            photoRemoveButton.disabled = false;
+            photoRemoveButton.textContent = "Удалить фото";
+        } else if (removeExistingPhoto) {
+            photoRemoveButton.disabled = false;
+            photoRemoveButton.textContent = "Вернуть фото";
+        } else {
+            photoRemoveButton.disabled = true;
+            photoRemoveButton.textContent = "Удалить фото";
+        }
+    }
+
+    function renderPhotoPreview() {
+        if (!photoPreview) {
+            return;
+        }
+
+        revokeSelectedPhotoPreview();
+
+        let url = "";
+        if (selectedPhotoFile) {
+            selectedPhotoPreviewURL = URL.createObjectURL(selectedPhotoFile);
+            url = selectedPhotoPreviewURL;
+        } else if (existingPhotoURL && !removeExistingPhoto) {
+            url = existingPhotoURL;
+        }
+
+        if (url) {
+            photoPreview.innerHTML = `<img src="${escapeHtml(url)}" alt="Фотография блюда">`;
+            const image = photoPreview.querySelector("img");
+            if (image) {
+                image.addEventListener("error", () => {
+                    photoPreview.innerHTML = `<div class="dish-photo-empty">Не удалось загрузить фото</div>`;
+                }, { once: true });
+            }
+        } else {
+            photoPreview.innerHTML = `
+                <div class="dish-photo-empty">
+                    ${removeExistingPhoto ? "Фото будет удалено после сохранения" : "Фото не добавлено"}
+                </div>
+            `;
+        }
+
+        updatePhotoRemoveButton();
+    }
+
+    if (photoInput) {
+        photoInput.addEventListener("change", () => {
+            const file = photoInput.files && photoInput.files[0] ? photoInput.files[0] : null;
+
+            if (!file) {
+                selectedPhotoFile = null;
+                renderPhotoPreview();
+                return;
+            }
+
+            const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+            if (file.type && !allowedTypes.includes(file.type)) {
+                photoInput.value = "";
+                toast("Поддерживаются только JPEG, PNG и WebP.", "error");
+                return;
+            }
+
+            if (file.size > 5 * 1024 * 1024) {
+                photoInput.value = "";
+                toast("Файл слишком большой. Максимум 5 МБ.", "error");
+                return;
+            }
+
+            selectedPhotoFile = file;
+            removeExistingPhoto = false;
+            renderPhotoPreview();
+        });
+    }
+
+    if (photoRemoveButton) {
+        photoRemoveButton.addEventListener("click", () => {
+            if (selectedPhotoFile) {
+                selectedPhotoFile = null;
+                if (photoInput) {
+                    photoInput.value = "";
+                }
+                removeExistingPhoto = false;
+            } else if (existingPhotoURL && !removeExistingPhoto) {
+                removeExistingPhoto = true;
+            } else if (removeExistingPhoto) {
+                removeExistingPhoto = false;
+            }
+
+            renderPhotoPreview();
+        });
+    }
+
+    renderPhotoPreview();
 
     const rowsContainer = overlay.querySelector("#recipe-rows");
     rows.forEach((item) => addRecipeRow(rowsContainer, item));

@@ -1,17 +1,28 @@
 package products
 
 import (
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 )
 
+const (
+	maxDishPhotoBytes  = 5 << 20
+	dishPhotoURLPrefix = "/media/dishes/"
+)
+
 type Handler struct {
-	Service *Service
+	Service   *Service
+	UploadDir string
 }
 
 func writeProductError(w http.ResponseWriter, err error) {
@@ -46,6 +57,20 @@ func parseRecipeDishID(path string) (int64, error) {
 	idValue := strings.TrimSuffix(
 		strings.TrimPrefix(path, "/api/admin/dishes/"),
 		"/recipe",
+	)
+
+	id, err := strconv.ParseInt(idValue, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, fmt.Errorf("invalid dish ID")
+	}
+
+	return id, nil
+}
+
+func parsePhotoDishID(path string) (int64, error) {
+	idValue := strings.TrimSuffix(
+		strings.TrimPrefix(path, "/api/admin/dishes/"),
+		"/photo",
 	)
 
 	id, err := strconv.ParseInt(idValue, 10, 64)
@@ -174,10 +199,13 @@ func (h *Handler) DeleteDish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.Service.DeleteDish(id); err != nil {
+	photoURL, err := h.Service.DeleteDish(id)
+	if err != nil {
 		writeProductError(w, err)
 		return
 	}
+
+	h.removeDishPhotoFile(photoURL)
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -296,4 +324,157 @@ func (h *Handler) UpdateRecipe(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) uploadDir() string {
+	if h.UploadDir != "" {
+		return h.UploadDir
+	}
+	return "data/uploads/dishes"
+}
+
+func (h *Handler) removeDishPhotoFile(photoURL string) {
+	if !strings.HasPrefix(photoURL, dishPhotoURLPrefix) {
+		return
+	}
+
+	filename := filepath.Base(strings.TrimPrefix(photoURL, dishPhotoURLPrefix))
+	if filename == "" || filename == "." || filename == "/" {
+		return
+	}
+
+	path := filepath.Join(h.uploadDir(), filename)
+	if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+		log.Printf("remove dish photo %s: %v", path, err)
+	}
+}
+
+func (h *Handler) UploadDishPhoto(w http.ResponseWriter, r *http.Request) {
+	id, err := parsePhotoDishID(r.URL.Path)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, maxDishPhotoBytes+(1<<20))
+
+	if err := r.ParseMultipartForm(maxDishPhotoBytes); err != nil {
+		var maxErr *http.MaxBytesError
+		if errors.As(err, &maxErr) {
+			http.Error(w, "Файл слишком большой. Максимум 5 МБ.", http.StatusRequestEntityTooLarge)
+			return
+		}
+		http.Error(w, "Не удалось прочитать файл.", http.StatusBadRequest)
+		return
+	}
+
+	file, _, err := r.FormFile("photo")
+	if err != nil {
+		http.Error(w, "Файл не выбран.", http.StatusBadRequest)
+		return
+	}
+	defer file.Close()
+
+	data, err := io.ReadAll(io.LimitReader(file, maxDishPhotoBytes+1))
+	if err != nil {
+		http.Error(w, "Не удалось прочитать файл.", http.StatusBadRequest)
+		return
+	}
+	if len(data) == 0 {
+		http.Error(w, "Файл пустой.", http.StatusBadRequest)
+		return
+	}
+	if len(data) > maxDishPhotoBytes {
+		http.Error(w, "Файл слишком большой. Максимум 5 МБ.", http.StatusRequestEntityTooLarge)
+		return
+	}
+
+	var extension string
+	switch http.DetectContentType(data) {
+	case "image/jpeg":
+		extension = ".jpg"
+	case "image/png":
+		extension = ".png"
+	case "image/webp":
+		extension = ".webp"
+	default:
+		http.Error(w, "Поддерживаются только JPEG, PNG и WebP.", http.StatusUnsupportedMediaType)
+		return
+	}
+
+	randomBytes := make([]byte, 16)
+	if _, err := rand.Read(randomBytes); err != nil {
+		http.Error(w, "Не удалось сохранить фотографию.", http.StatusInternalServerError)
+		return
+	}
+
+	filename := hex.EncodeToString(randomBytes) + extension
+	dir := h.uploadDir()
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		log.Printf("create dish photo dir: %v", err)
+		http.Error(w, "Не удалось сохранить фотографию.", http.StatusInternalServerError)
+		return
+	}
+
+	fullPath := filepath.Join(dir, filename)
+	if err := os.WriteFile(fullPath, data, 0o644); err != nil {
+		log.Printf("write dish photo: %v", err)
+		http.Error(w, "Не удалось сохранить фотографию.", http.StatusInternalServerError)
+		return
+	}
+
+	photoURL := dishPhotoURLPrefix + filename
+	oldPhotoURL, err := h.Service.SetDishPhoto(id, photoURL)
+	if err != nil {
+		_ = os.Remove(fullPath)
+		writeProductError(w, err)
+		return
+	}
+
+	if oldPhotoURL != "" && oldPhotoURL != photoURL {
+		h.removeDishPhotoFile(oldPhotoURL)
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(map[string]string{
+		"photo_url": photoURL,
+	})
+}
+
+func (h *Handler) DeleteDishPhoto(w http.ResponseWriter, r *http.Request) {
+	id, err := parsePhotoDishID(r.URL.Path)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	oldPhotoURL, err := h.Service.ClearDishPhoto(id)
+	if err != nil {
+		writeProductError(w, err)
+		return
+	}
+
+	h.removeDishPhotoFile(oldPhotoURL)
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) ServeDishPhoto(w http.ResponseWriter, r *http.Request) {
+	filename := r.PathValue("filename")
+	if filename == "" || filepath.Base(filename) != filename {
+		http.NotFound(w, r)
+		return
+	}
+
+	path := filepath.Join(h.uploadDir(), filename)
+	info, err := os.Stat(path)
+	if err != nil || info.IsDir() {
+		http.NotFound(w, r)
+		return
+	}
+
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	http.ServeFile(w, r, path)
 }

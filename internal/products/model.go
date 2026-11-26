@@ -9,6 +9,7 @@ type Dish struct {
 	IsAvailable bool               `json:"is_available"`
 	HasRecipe   bool               `json:"has_recipe"`
 	Emoji       string             `json:"emoji"`
+	PhotoURL    string             `json:"photo_url"`
 	Ingredients []RecipeIngredient `json:"ingredients,omitempty"`
 }
 

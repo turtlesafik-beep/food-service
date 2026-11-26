@@ -3,15 +3,29 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="theme-color" content="#f6f1e8">
     <title>Ваш заказ — Food Service</title>
+    <link rel="stylesheet" href="/menu.css">
     <link rel="stylesheet" href="/order.css">
 </head>
 <body>
+    <header class="order-topbar">
+        <a class="order-brand-link" href="/">
+            <span class="order-brand-mark" aria-hidden="true">🍽️</span>
+            <span>Food Service</span>
+        </a>
+        <a class="order-back-link" href="/">В меню</a>
+    </header>
+
     <main class="order-page">
         <div id="order-root">
-            <div class="order-loading">Загружаем заказ...</div>
+            <div class="order-loading">Загружаем заказ…</div>
         </div>
     </main>
+
+    <footer class="order-footer">
+        Домашняя кухня · Food Service
+    </footer>
 
     <script src="/order.js"></script>
 </body>
