@@ -14,6 +14,156 @@ const UNIT_LABELS = {
 
 const UNIT_OPTIONS = ["g", "ml", "pcs"];
 
+const DEFAULT_DISH_EMOJI = "🍽️";
+
+const EMOJI_CATEGORIES = [
+    {
+        id: "meat",
+        label: "Мясо и птица",
+        emojis: [
+            { char: "🍗", name: "Куриная ножка" },
+            { char: "🍖", name: "Мясо на кости" },
+            { char: "🥩", name: "Стейк" },
+            { char: "🥓", name: "Бекон" },
+            { char: "🦃", name: "Индейка" },
+            { char: "🐔", name: "Курица" },
+            { char: "🐖", name: "Свинина" },
+            { char: "🐄", name: "Говядина" },
+            { char: "🦆", name: "Утка" },
+            { char: "🐇", name: "Кролик" }
+        ]
+    },
+    {
+        id: "fish",
+        label: "Рыба и морепродукты",
+        emojis: [
+            { char: "🐟", name: "Рыба" },
+            { char: "🐠", name: "Тропическая рыба" },
+            { char: "🐡", name: "Рыба-шар" },
+            { char: "🦈", name: "Акула" },
+            { char: "🐙", name: "Осьминог" },
+            { char: "🦑", name: "Кальмар" },
+            { char: "🦐", name: "Креветка" },
+            { char: "🦞", name: "Лобстер" },
+            { char: "🦀", name: "Краб" }
+        ]
+    },
+    {
+        id: "vegetables",
+        label: "Овощи",
+        emojis: [
+            { char: "🥦", name: "Брокколи" },
+            { char: "🥕", name: "Морковь" },
+            { char: "🥒", name: "Огурец" },
+            { char: "🍅", name: "Помидор" },
+            { char: "🍆", name: "Баклажан" },
+            { char: "🥔", name: "Картофель" },
+            { char: "🌽", name: "Кукуруза" },
+            { char: "🫑", name: "Болгарский перец" },
+            { char: "🌶️", name: "Острый перец" },
+            { char: "🧄", name: "Чеснок" },
+            { char: "🧅", name: "Лук" },
+            { char: "🍄", name: "Грибы" },
+            { char: "🥑", name: "Авокадо" }
+        ]
+    },
+    {
+        id: "fruits",
+        label: "Фрукты и ягоды",
+        emojis: [
+            { char: "🍎", name: "Яблоко" },
+            { char: "🍐", name: "Груша" },
+            { char: "🍊", name: "Мандарин" },
+            { char: "🍋", name: "Лимон" },
+            { char: "🍌", name: "Банан" },
+            { char: "🍉", name: "Арбуз" },
+            { char: "🍇", name: "Виноград" },
+            { char: "🍓", name: "Клубника" },
+            { char: "🫐", name: "Голубика" },
+            { char: "🍒", name: "Вишня" },
+            { char: "🍑", name: "Персик" },
+            { char: "🥝", name: "Киви" },
+            { char: "🍍", name: "Ананас" }
+        ]
+    },
+    {
+        id: "ready",
+        label: "Готовые блюда",
+        emojis: [
+            { char: "🍲", name: "Суп" },
+            { char: "🍛", name: "Карри" },
+            { char: "🍜", name: "Лапша" },
+            { char: "🍝", name: "Паста" },
+            { char: "🍕", name: "Пицца" },
+            { char: "🍔", name: "Бургер" },
+            { char: "🌮", name: "Тако" },
+            { char: "🌯", name: "Буритто" },
+            { char: "🥙", name: "Шаурма" },
+            { char: "🍣", name: "Суши" },
+            { char: "🍱", name: "Бенто" },
+            { char: "🍚", name: "Рис" },
+            { char: "🥘", name: "Рагу" },
+            { char: "🍳", name: "Яичница" },
+            { char: "🥞", name: "Блины" },
+            { char: "🥗", name: "Салат" }
+        ]
+    },
+    {
+        id: "bakery",
+        label: "Выпечка и десерты",
+        emojis: [
+            { char: "🍞", name: "Хлеб" },
+            { char: "🥖", name: "Багет" },
+            { char: "🥐", name: "Круассан" },
+            { char: "🥨", name: "Крендель" },
+            { char: "🧁", name: "Капкейк" },
+            { char: "🎂", name: "Торт" },
+            { char: "🍰", name: "Кусок торта" },
+            { char: "🍪", name: "Печенье" },
+            { char: "🍩", name: "Пончик" },
+            { char: "🥧", name: "Пирог" },
+            { char: "🍫", name: "Шоколад" },
+            { char: "🍦", name: "Мороженое" },
+            { char: "🍨", name: "Мороженое в креманке" }
+        ]
+    },
+    {
+        id: "drinks",
+        label: "Напитки",
+        emojis: [
+            { char: "☕", name: "Кофе" },
+            { char: "🍵", name: "Чай" },
+            { char: "🥤", name: "Газировка" },
+            { char: "🧃", name: "Сок" },
+            { char: "🧋", name: "Бабл-ти" },
+            { char: "🍺", name: "Пиво" },
+            { char: "🍷", name: "Вино" },
+            { char: "🥂", name: "Шампанское" },
+            { char: "🍸", name: "Коктейль" },
+            { char: "🍹", name: "Тропический коктейль" },
+            { char: "🥛", name: "Молоко" }
+        ]
+    },
+    {
+        id: "other",
+        label: "Прочее",
+        emojis: [
+            { char: "🍽️", name: "Тарелка (по умолчанию)" },
+            { char: "🥄", name: "Ложка" },
+            { char: "🍴", name: "Вилка и нож" },
+            { char: "🥢", name: "Палочки" },
+            { char: "🔪", name: "Нож" },
+            { char: "🧂", name: "Соль" },
+            { char: "🧈", name: "Масло" },
+            { char: "🧀", name: "Сыр" },
+            { char: "🥚", name: "Яйцо" },
+            { char: "🥜", name: "Орехи" },
+            { char: "🍯", name: "Мёд" },
+            { char: "🥣", name: "Миска" }
+        ]
+    }
+];
+
 const state = {
     page: "dishes",
     dishes: [],
@@ -505,9 +655,199 @@ function addRecipeRow(container, item = { name: "", quantity: "", unit: "g" }) {
     return row;
 }
 
+function setupEmojiPicker(overlay, initialEmoji) {
+    const field = overlay.querySelector("#dish-emoji-field");
+    const trigger = overlay.querySelector("#dish-emoji-button");
+    const currentDisplay = overlay.querySelector("#dish-emoji-current");
+    const hiddenInput = overlay.querySelector("#dish-emoji");
+    const picker = overlay.querySelector("#dish-emoji-picker");
+    const categoriesBox = overlay.querySelector("#dish-emoji-categories");
+    const grid = overlay.querySelector("#dish-emoji-grid");
+    const closeButton = overlay.querySelector("#dish-emoji-close");
+    const closeInsideButton = overlay.querySelector("#dish-emoji-close-inside");
+    const resetButton = overlay.querySelector("#dish-emoji-reset");
+    const resetInsideButton = overlay.querySelector("#dish-emoji-reset-inside");
+
+    if (!field || !trigger || !currentDisplay || !hiddenInput || !picker || !categoriesBox || !grid) {
+        return;
+    }
+
+    let activeCategoryId = EMOJI_CATEGORIES[0].id;
+    let isOpen = false;
+
+    function findCategoryId(emoji) {
+        const category = EMOJI_CATEGORIES.find((item) =>
+            item.emojis.some((entry) => entry.char === emoji)
+        );
+        return category ? category.id : EMOJI_CATEGORIES[0].id;
+    }
+
+    function updateSelectedEmoji(emoji) {
+        hiddenInput.value = emoji;
+        currentDisplay.textContent = emoji;
+    }
+
+    function renderCategories() {
+        categoriesBox.innerHTML = EMOJI_CATEGORIES.map((category) => `
+            <button
+                type="button"
+                class="emoji-category ${category.id === activeCategoryId ? "active" : ""}"
+                data-category="${category.id}"
+                role="tab"
+                aria-selected="${category.id === activeCategoryId}"
+            >${escapeHtml(category.label)}</button>
+        `).join("");
+    }
+
+    function renderGrid() {
+        const category = EMOJI_CATEGORIES.find((item) => item.id === activeCategoryId) || EMOJI_CATEGORIES[0];
+        const selectedEmoji = hiddenInput.value;
+
+        grid.innerHTML = category.emojis.map((entry) => {
+            const selected = entry.char === selectedEmoji;
+
+            return `
+                <button
+                    type="button"
+                    class="emoji-option ${selected ? "selected" : ""}"
+                    data-emoji="${escapeHtml(entry.char)}"
+                    title="${escapeHtml(entry.name)}"
+                    aria-label="${escapeHtml(entry.name)}"
+                    aria-selected="${selected}"
+                    role="option"
+                >
+                    <span class="emoji-option-char">${entry.char}</span>
+                </button>
+            `;
+        }).join("");
+    }
+
+    function updateCategoryButtons() {
+        categoriesBox.querySelectorAll("[data-category]").forEach((button) => {
+            const active = button.dataset.category === activeCategoryId;
+            button.classList.toggle("active", active);
+            button.setAttribute("aria-selected", String(active));
+        });
+    }
+
+    function focusGridOption() {
+        const target = grid.querySelector(".emoji-option.selected") || grid.querySelector(".emoji-option");
+        if (target) {
+            target.focus();
+        }
+    }
+
+    function setActiveCategory(categoryId) {
+        activeCategoryId = categoryId;
+        updateCategoryButtons();
+        renderGrid();
+        focusGridOption();
+    }
+
+    function openPicker() {
+        if (isOpen) {
+            return;
+        }
+
+        isOpen = true;
+        activeCategoryId = findCategoryId(hiddenInput.value);
+        renderCategories();
+        renderGrid();
+        picker.hidden = false;
+        trigger.setAttribute("aria-expanded", "true");
+        focusGridOption();
+        picker.scrollIntoView({ block: "nearest" });
+    }
+
+    function closePicker() {
+        if (!isOpen) {
+            return;
+        }
+
+        isOpen = false;
+        picker.hidden = true;
+        trigger.setAttribute("aria-expanded", "false");
+    }
+
+    function chooseEmoji(emoji) {
+        updateSelectedEmoji(emoji);
+        closePicker();
+        trigger.focus();
+    }
+
+    function resetEmoji() {
+        updateSelectedEmoji(DEFAULT_DISH_EMOJI);
+        closePicker();
+        trigger.focus();
+    }
+
+    updateSelectedEmoji(initialEmoji);
+    trigger.setAttribute("aria-expanded", "false");
+
+    trigger.addEventListener("click", () => {
+        if (isOpen) {
+            closePicker();
+        } else {
+            openPicker();
+        }
+    });
+
+    if (resetButton) {
+        resetButton.addEventListener("click", resetEmoji);
+    }
+    if (resetInsideButton) {
+        resetInsideButton.addEventListener("click", resetEmoji);
+    }
+    if (closeButton) {
+        closeButton.addEventListener("click", closePicker);
+    }
+    if (closeInsideButton) {
+        closeInsideButton.addEventListener("click", closePicker);
+    }
+
+    categoriesBox.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-category]");
+        if (button) {
+            setActiveCategory(button.dataset.category);
+        }
+    });
+
+    grid.addEventListener("click", (event) => {
+        const button = event.target.closest(".emoji-option");
+        if (button) {
+            chooseEmoji(button.dataset.emoji);
+        }
+    });
+
+    field.addEventListener("keydown", (event) => {
+        if (event.key === "Escape" && isOpen) {
+            event.stopPropagation();
+            closePicker();
+            trigger.focus();
+        }
+    });
+
+    overlay.addEventListener("click", (event) => {
+        if (!isOpen) {
+            return;
+        }
+
+        // composedPath фиксирует путь события до возможной перерисовки DOM.
+        // contains(event.target) ломается, если target уже отсоединён от DOM.
+        const clickedInsideField = typeof event.composedPath === "function"
+            ? event.composedPath().includes(field)
+            : field.contains(event.target);
+
+        if (!clickedInsideField) {
+            closePicker();
+        }
+    });
+}
+
 function renderDishForm(dish, recipe) {
     const isEditing = Boolean(dish);
     const rows = recipe.length > 0 ? recipe : [{ name: "", quantity: "", unit: "g" }];
+    const currentEmoji = String(dish?.emoji || "").trim() || DEFAULT_DISH_EMOJI;
 
     const datalist = state.ingredients.map((ingredient) => (
         `<option value="${escapeHtml(ingredient.name)}"></option>`
@@ -535,9 +875,59 @@ function renderDishForm(dish, recipe) {
                 <input id="dish-price" name="price" type="number" min="0" step="1" required value="${dish?.price ?? ""}">
             </div>
 
-            <div class="form-field">
-                <label for="dish-emoji">Эмодзи</label>
-                <input id="dish-emoji" name="emoji" maxlength="8" value="${escapeHtml(dish?.emoji || "🍽️")}">
+            <div class="form-field form-field-wide emoji-field" id="dish-emoji-field">
+                <label for="dish-emoji-button">Эмодзи блюда</label>
+
+                <div class="emoji-control">
+                    <button
+                        type="button"
+                        class="emoji-trigger"
+                        id="dish-emoji-button"
+                        aria-haspopup="dialog"
+                        aria-expanded="false"
+                        aria-controls="dish-emoji-picker"
+                    >
+                        <span class="emoji-current" id="dish-emoji-current" aria-hidden="true">${escapeHtml(currentEmoji)}</span>
+                        <span class="emoji-trigger-text">Выбрать эмодзи</span>
+                        <span class="emoji-trigger-chevron" aria-hidden="true">▾</span>
+                    </button>
+
+                    <button type="button" class="secondary-button emoji-reset" id="dish-emoji-reset">
+                        Сбросить
+                    </button>
+                </div>
+
+                <input type="hidden" id="dish-emoji" name="emoji" value="${escapeHtml(currentEmoji)}">
+
+                <p class="hint">Нажмите на поле и выберите картинку из каталога.</p>
+
+                <div
+                    class="emoji-picker"
+                    id="dish-emoji-picker"
+                    role="dialog"
+                    aria-label="Выбор эмодзи"
+                    hidden
+                >
+                    <div class="emoji-picker-header">
+                        <div>
+                            <div class="emoji-picker-title">Выберите эмодзи</div>
+                            <div class="emoji-picker-subtitle">Каталог продуктов, блюд и напитков</div>
+                        </div>
+                        <button type="button" class="modal-close emoji-picker-close" id="dish-emoji-close" aria-label="Закрыть выбор эмодзи">×</button>
+                    </div>
+
+                    <div class="emoji-categories" id="dish-emoji-categories" role="tablist" aria-label="Категории эмодзи"></div>
+                    <div class="emoji-grid" id="dish-emoji-grid" role="listbox" aria-label="Эмодзи"></div>
+
+                    <div class="emoji-picker-footer">
+                        <button type="button" class="secondary-button" id="dish-emoji-reset-inside">
+                            Сбросить на ${DEFAULT_DISH_EMOJI}
+                        </button>
+                        <button type="button" class="secondary-button" id="dish-emoji-close-inside">
+                            Закрыть
+                        </button>
+                    </div>
+                </div>
             </div>
 
             <div class="form-field form-field-checkbox">
@@ -567,8 +957,7 @@ function renderDishForm(dish, recipe) {
         body,
         submitLabel: "Сохранить",
         wide: true,
-        onSubmit: async (form) => {
-            const name = form.querySelector("#dish-name").value.trim();
+        onSubmit: async (form) => {            const name = form.querySelector("#dish-name").value.trim();
             const description = form.querySelector("#dish-description").value.trim();
             const weightRaw = form.querySelector("#dish-weight").value.trim();
             const priceRaw = form.querySelector("#dish-price").value.trim();
@@ -636,7 +1025,7 @@ function renderDishForm(dish, recipe) {
                 description,
                 weight_grams: weightGrams,
                 price,
-                emoji: emoji || "🍽️",
+                emoji: emoji || DEFAULT_DISH_EMOJI,
                 is_available: isAvailable,
                 ingredients
             };
@@ -660,6 +1049,8 @@ function renderDishForm(dish, recipe) {
             }
         }
     });
+
+    setupEmojiPicker(overlay, currentEmoji);
 
     const rowsContainer = overlay.querySelector("#recipe-rows");
     rows.forEach((item) => addRecipeRow(rowsContainer, item));
