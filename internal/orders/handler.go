@@ -25,6 +25,7 @@ func (h *Handler) CreateOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusCreated)
 
 	json.NewEncoder(w).Encode(result)
@@ -45,6 +46,7 @@ func (h *Handler) GetOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusOK)
 
 	json.NewEncoder(w).Encode(order)
@@ -72,13 +74,14 @@ func (h *Handler) GetOrders(w http.ResponseWriter, r *http.Request) {
 		offset = parsed
 	}
 
-	orders, err := h.Service.GetOrders(limit, offset)
+	orders, err := h.Service.GetOrders(limit, offset, r.URL.Query().Get("q"))
 	if err != nil {
 		http.Error(w, "Failed to get orders", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	json.NewEncoder(w).Encode(orders)
 }
 
@@ -96,5 +99,6 @@ func (h *Handler) GetAdminOrder(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "no-store")
 	json.NewEncoder(w).Encode(order)
 }

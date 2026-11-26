@@ -40,10 +40,13 @@ type OrderIngredient struct {
 }
 
 type AdminOrder struct {
-	OrderID      int64  `json:"order_id"`
-	CreatedAt    string `json:"created_at"`
-	CustomerName string `json:"customer_name"`
-	Total        int64  `json:"total"`
+	OrderID       int64  `json:"order_id"`
+	CreatedAt     string `json:"created_at"`
+	CustomerName  string `json:"customer_name"`
+	CustomerPhone string `json:"customer_phone"`
+	Token         string `json:"token"`
+	ItemCount     int    `json:"item_count"`
+	Total         int64  `json:"total"`
 }
 
 type AdminOrderResponse struct {
@@ -52,6 +55,7 @@ type AdminOrderResponse struct {
 	CustomerName  string            `json:"customer_name"`
 	CustomerPhone string            `json:"customer_phone"`
 	Comment       string            `json:"comment"`
+	Token         string            `json:"token"`
 	Items         []OrderItem       `json:"items"`
 	Ingredients   []OrderIngredient `json:"ingredients"`
 	Total         int64             `json:"total"`

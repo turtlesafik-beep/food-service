@@ -84,12 +84,14 @@ func (s *Service) CreateOrder(request CreateOrderRequest) (CreateOrderResult, er
 
 	result, err := tx.Exec(
 		`INSERT INTO orders (
-        		token_hash,
-        		customer_name,
-        		customer_phone,
-        		comment
-    		) VALUES (?, ?, ?, ?)`,
+			token_hash,
+			token,
+			customer_name,
+			customer_phone,
+			comment
+		) VALUES (?, ?, ?, ?, ?)`,
 		tokenHash,
+		token,
 		request.CustomerName,
 		request.CustomerPhone,
 		request.Comment,
@@ -355,20 +357,38 @@ func (s *Service) GetOrder(token string) (OrderResponse, error) {
 	return order, nil
 }
 
-func (s *Service) GetOrders(limit, offset int) ([]AdminOrder, error) {
-	rows, err := s.DB.Query(`
+func (s *Service) GetOrders(limit, offset int, query string) ([]AdminOrder, error) {
+	query = strings.TrimSpace(query)
+
+	sqlQuery := `
 		SELECT
 			o.id,
 			o.created_at,
 			o.customer_name,
-			COALESCE(SUM(oi.unit_price * oi.quantity), 0) AS total
+			o.customer_phone,
+			o.token,
+			COALESCE(SUM(oi.unit_price * oi.quantity), 0) AS total,
+			COUNT(oi.id) AS item_count
 		FROM orders o
 		LEFT JOIN order_items oi ON oi.order_id = o.id
+	`
+
+	args := make([]interface{}, 0, 4)
+
+	if query != "" {
+		sqlQuery += ` WHERE o.customer_phone LIKE ? OR o.customer_name LIKE ?`
+		pattern := "%" + query + "%"
+		args = append(args, pattern, pattern)
+	}
+
+	sqlQuery += `
 		GROUP BY o.id
 		ORDER BY o.id DESC
 		LIMIT ? OFFSET ?
-	`, limit, offset)
+	`
+	args = append(args, limit, offset)
 
+	rows, err := s.DB.Query(sqlQuery, args...)
 	if err != nil {
 		return nil, fmt.Errorf("get orders: %w", err)
 	}
@@ -383,7 +403,10 @@ func (s *Service) GetOrders(limit, offset int) ([]AdminOrder, error) {
 			&order.OrderID,
 			&order.CreatedAt,
 			&order.CustomerName,
+			&order.CustomerPhone,
+			&order.Token,
 			&order.Total,
+			&order.ItemCount,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan order: %w", err)
@@ -403,7 +426,7 @@ func (s *Service) GetAdminOrder(id int64) (AdminOrderResponse, error) {
 	var order AdminOrderResponse
 
 	err := s.DB.QueryRow(`
-		SELECT id, created_at, customer_name, customer_phone, comment
+		SELECT id, created_at, customer_name, customer_phone, comment, token
 		FROM orders
 		WHERE id = ?
 	`, id).Scan(
@@ -412,6 +435,7 @@ func (s *Service) GetAdminOrder(id int64) (AdminOrderResponse, error) {
 		&order.CustomerName,
 		&order.CustomerPhone,
 		&order.Comment,
+		&order.Token,
 	)
 
 	if err != nil {

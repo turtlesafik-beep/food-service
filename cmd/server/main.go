@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"strings"
 
 	"food-service/internal/database"
@@ -57,7 +58,7 @@ func main() {
 
 	http.HandleFunc("GET /api/orders/{token}", orderHandler.GetOrder)
 
-	http.HandleFunc("/api/admin/dishes", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/api/admin/dishes", adminAuth(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			productHandler.GetDishes(w, r)
@@ -66,15 +67,15 @@ func main() {
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
-	})
+	}))
 
 	http.HandleFunc("GET /api/dishes", productHandler.GetPublicDishes)
 
-	http.HandleFunc("GET /api/admin/orders", orderHandler.GetOrders)
+	http.HandleFunc("GET /api/admin/orders", adminAuth(orderHandler.GetOrders))
 
-	http.HandleFunc("GET /api/admin/orders/{id}", orderHandler.GetAdminOrder)
+	http.HandleFunc("GET /api/admin/orders/{id}", adminAuth(orderHandler.GetAdminOrder))
 
-	http.HandleFunc("/api/admin/dishes/", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/api/admin/dishes/", adminAuth(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/recipe") {
 			switch r.Method {
 			case http.MethodGet:
@@ -92,12 +93,14 @@ func main() {
 			productHandler.UpdateDish(w, r)
 		case http.MethodPatch:
 			productHandler.UpdateDishAvailability(w, r)
+		case http.MethodDelete:
+			productHandler.DeleteDish(w, r)
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
-	})
+	}))
 
-	http.HandleFunc("/api/admin/ingredients", func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/api/admin/ingredients", adminAuth(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
 		case http.MethodGet:
 			productHandler.GetIngredients(w, r)
@@ -106,7 +109,22 @@ func main() {
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
-	})
+	}))
+
+	http.HandleFunc("/api/admin/ingredients/", adminAuth(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPut:
+			productHandler.UpdateIngredient(w, r)
+		case http.MethodDelete:
+			productHandler.DeleteIngredient(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	}))
+
+	if os.Getenv("ADMIN_PASSWORD") == "" {
+		log.Println("WARNING: ADMIN_PASSWORD is not set; admin API is unprotected")
+	}
 
 	log.Println("Server started on :3000")
 
