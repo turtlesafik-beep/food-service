@@ -250,7 +250,6 @@ function addToCart(dishId) {
 
     saveCart();
     updateCartUI();
-    toast(`«${dish.name}» добавлено в корзину`, "success");
 
     floatingCart.classList.remove("is-bumped");
     void floatingCart.offsetWidth;
