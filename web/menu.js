@@ -158,6 +158,11 @@ function getDish(dishId) {
     return state.dishIndex.get(dishId) || null;
 }
 
+function cartQuantityFor(dishId) {
+    const item = state.cart.find((entry) => entry.dishId === dishId);
+    return item ? item.quantity : 0;
+}
+
 function getCartDetails() {
     const items = [];
 
@@ -214,9 +219,9 @@ function updateCartUI() {
     } else {
         floatingCart.hidden = false;
         document.body.classList.add("has-floating-cart");
-        floatingCartSummary.textContent = `${lineCount} ${plural(lineCount, "позиция", "позиции", "позиций")} · ${
-            state.menuLoaded ? formatMoney(details.total) : "—"
-        }`;
+        floatingCartSummary.textContent = `${totalQuantity} ${
+            plural(totalQuantity, "порция", "порции", "порций")
+        } · ${state.menuLoaded ? formatMoney(details.total) : "—"}`;
     }
 
     if (state.isCartOpen) {
@@ -225,6 +230,8 @@ function updateCartUI() {
     if (state.isCheckoutOpen) {
         renderCheckoutSummary();
     }
+
+    syncDishCardControls();
 }
 
 function addToCart(dishId) {
@@ -272,6 +279,101 @@ function removeFromCart(dishId) {
     saveCart();
     updateCartUI();
     toast("Блюдо удалено из корзины", "info");
+}
+
+function dishAddButtonHtml(dish) {
+    return `
+        <button
+            class="dish-add"
+            type="button"
+            data-action="add"
+            data-dish-id="${dish.id}"
+            aria-label="Добавить «${escapeHtml(dish.name)}» в корзину"
+        >+</button>
+    `;
+}
+
+function dishQuantityControlHtml(dish, quantity) {
+    const name = escapeHtml(dish.name);
+
+    return `
+        <div class="dish-quantity-control" role="group" aria-label="Количество блюда «${name}»">
+            <button
+                class="dish-quantity-button"
+                type="button"
+                data-action="decrease"
+                data-dish-id="${dish.id}"
+                aria-label="Уменьшить количество «${name}»"
+            >−</button>
+            <span class="dish-quantity-value" aria-live="polite">${quantity}</span>
+            <button
+                class="dish-quantity-button dish-quantity-button-accent"
+                type="button"
+                data-action="increase"
+                data-dish-id="${dish.id}"
+                aria-label="Увеличить количество «${name}»"
+            >+</button>
+        </div>
+    `;
+}
+
+function dishCartControlHtml(dish) {
+    const quantity = cartQuantityFor(Number(dish.id));
+    return quantity > 0 ? dishQuantityControlHtml(dish, quantity) : dishAddButtonHtml(dish);
+}
+
+function syncDishCardControl(card) {
+    const control = card.querySelector("[data-dish-control]");
+    if (!control) {
+        return;
+    }
+
+    const dish = getDish(Number(card.dataset.dishId));
+    if (!dish) {
+        return;
+    }
+
+    const quantity = cartQuantityFor(dish.id);
+    const hasGroup = Boolean(control.querySelector(".dish-quantity-control"));
+    const wasFocused = control.contains(document.activeElement);
+
+    if (quantity <= 0) {
+        if (hasGroup) {
+            control.innerHTML = dishAddButtonHtml(dish);
+            control.dataset.quantity = "0";
+
+            if (wasFocused) {
+                control.querySelector(".dish-add")?.focus({ preventScroll: true });
+            }
+        }
+        return;
+    }
+
+    if (!hasGroup) {
+        control.innerHTML = dishQuantityControlHtml(dish, quantity);
+        control.dataset.quantity = String(quantity);
+
+        if (wasFocused) {
+            control.querySelector('[data-action="increase"]')?.focus({ preventScroll: true });
+        }
+        return;
+    }
+
+    const value = control.querySelector(".dish-quantity-value");
+    if (value) {
+        const nextValue = String(quantity);
+        if (value.textContent !== nextValue) {
+            value.textContent = nextValue;
+            value.classList.remove("is-bumped");
+            void value.offsetWidth;
+            value.classList.add("is-bumped");
+        }
+    }
+    control.dataset.quantity = String(quantity);
+}
+
+function syncDishCardControls() {
+    document.querySelectorAll(".dish-card[data-dish-id]").forEach(syncDishCardControl);
 }
 
 function dishCardHtml(dish) {
@@ -355,13 +457,11 @@ function dishCardHtml(dish) {
                         data-action="details"
                         aria-expanded="false"
                     >Подробнее</button>
-                    <button
-                        class="dish-add"
-                        type="button"
-                        data-action="add"
-                        data-dish-id="${dish.id}"
-                        aria-label="Добавить «${escapeHtml(name)}» в корзину"
-                    >+</button>
+                    <div
+                        class="dish-cart-control"
+                        data-dish-control="${dish.id}"
+                        data-quantity="${cartQuantityFor(Number(dish.id))}"
+                    >${dishCartControlHtml(dish)}</div>
                 </div>
             </div>
         </article>
@@ -866,8 +966,13 @@ function handleMenuClick(event) {
         return;
     }
 
-    if (actionButton.dataset.action === "add") {
-        addToCart(Number(actionButton.dataset.dishId || card.dataset.dishId));
+    const action = actionButton.dataset.action;
+    const dishId = Number(actionButton.dataset.dishId || card.dataset.dishId);
+
+    if (action === "add" || action === "increase") {
+        addToCart(dishId);
+    } else if (action === "decrease") {
+        changeQuantity(dishId, -1);
     }
 }
 
