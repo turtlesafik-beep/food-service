@@ -23,6 +23,11 @@ const MENU_TYPE_LABELS = {
     hidden: "Скрыто"
 };
 
+const CATEGORY_MENU_LABELS = {
+    home: "Домашнее меню",
+    banquet: "Банкетное меню"
+};
+
 const DISH_FILTERS = [
     { value: "all", label: "Все" },
     { value: "home", label: "Домашнее меню" },
@@ -185,6 +190,10 @@ const state = {
     dishesFilter: "all",
     ingredients: [],
     ingredientByKey: new Map(),
+    categories: {
+        home: [],
+        banquet: []
+    },
     orders: {
         items: [],
         offset: 0,
@@ -267,6 +276,11 @@ function humanizeError(message) {
         "ingredient name is required": "Укажите название ингредиента.",
         "ingredient quantity must be greater than zero": "Количество должно быть больше нуля.",
         "invalid ingredient unit": "Недопустимая единица измерения.",
+        "category name is required": "Укажите название категории.",
+        "invalid category menu type": "Выберите домашнее или банкетное меню.",
+        "category not found": "Категория не найдена. Обновите список.",
+        "invalid category id": "Некорректная категория.",
+        "categories are not available for this menu type": "Для этого типа меню категории недоступны.",
         "recipe must contain at least one ingredient": "В рецепте должен быть хотя бы один ингредиент.",
         "cannot publish a dish without ingredients": "Нельзя опубликовать блюдо без рецепта. Добавьте ингредиенты.",
         "is_available is required": "Укажите статус публикации.",
@@ -303,6 +317,21 @@ function humanizeError(message) {
     match = message.match(/^duplicate ingredient: (.+)$/);
     if (match) {
         return `Ингредиент «${match[1]}» указан дважды.`;
+    }
+
+    match = message.match(/^category "(.+)" already exists$/);
+    if (match) {
+        return `Категория «${match[1]}» уже существует в этом меню.`;
+    }
+
+    match = message.match(/^category not found: (\d+)$/);
+    if (match) {
+        return "Категория не найдена. Обновите список.";
+    }
+
+    match = message.match(/^category (\d+) is not available for this menu type$/);
+    if (match) {
+        return "Категория не подходит к выбранному типу меню.";
     }
 
     return message;
@@ -492,6 +521,20 @@ async function loadIngredients() {
     return state.ingredients;
 }
 
+async function loadCategories() {
+    const [home, banquet] = await Promise.all([
+        api("/api/categories?menu=home"),
+        api("/api/categories?menu=banquet")
+    ]);
+
+    state.categories = {
+        home: Array.isArray(home) ? home : [],
+        banquet: Array.isArray(banquet) ? banquet : []
+    };
+
+    return state.categories;
+}
+
 async function loadDishes() {
     const tbody = document.querySelector("#dishes-list");
     if (!tbody) {
@@ -645,14 +688,14 @@ async function deleteDish(dish) {
 
 async function openDishForm(dish) {
     try {
-        await loadIngredients();
+        await Promise.all([loadIngredients(), loadCategories()]);
 
         let recipe = [];
         if (dish) {
             recipe = await api(`/api/admin/dishes/${dish.id}/recipe`);
         }
 
-        renderDishForm(dish, recipe);
+        renderDishForm(dish, recipe, state.categories);
     } catch (error) {
         toast(error.message, "error");
     }
@@ -902,8 +945,11 @@ function setupEmojiPicker(overlay, initialEmoji) {
     });
 }
 
-function renderDishForm(dish, recipe) {
+function renderDishForm(dish, recipe, categories = state.categories) {
     const isEditing = Boolean(dish);
+    const selectedCategoryIds = new Set(
+        (Array.isArray(dish?.category_ids) ? dish.category_ids : []).map(Number)
+    );
     const rows = recipe.length > 0 ? recipe : [{ name: "", quantity: "", unit: "g" }];
     const currentEmoji = String(dish?.emoji || "").trim() || DEFAULT_DISH_EMOJI;
     const currentMenuType = dish?.menu_type || "home";
@@ -913,6 +959,22 @@ function renderDishForm(dish, recipe) {
     const previousMenuHint = currentMenuType === "hidden" && previousMenuType
         ? ` Прежнее меню: «${escapeHtml(menuTypeLabel(previousMenuType))}».`
         : "";
+
+    function categoryMenuTypes(menuType) {
+        if (menuType === "both") {
+            return ["home", "banquet"];
+        }
+        if (menuType === "home" || menuType === "banquet") {
+            return [menuType];
+        }
+        if (menuType === "hidden") {
+            const previous = ["home", "banquet", "both"].includes(previousMenuType)
+                ? previousMenuType
+                : "home";
+            return previous === "both" ? ["home", "banquet"] : [previous];
+        }
+        return [];
+    }
     const existingPhotoURL = String(dish?.photo_url || "").trim();
     let selectedPhotoFile = null;
     let removeExistingPhoto = false;
@@ -957,6 +1019,14 @@ function renderDishForm(dish, recipe) {
                     «Скрыто» автоматически снимает блюдо с публикации и убирает его из публичного каталога.
                     Чтобы вернуть блюдо, выберите домашнее, банкетное или оба меню.${previousMenuHint}
                 </p>
+            </div>
+
+            <div class="form-field form-field-wide" id="dish-categories-field">
+                <label>Категории</label>
+                <p class="hint" id="dish-categories-hint">
+                    Можно выбрать несколько категорий или не выбирать ни одной.
+                </p>
+                <div class="category-choice-list" id="dish-category-options"></div>
             </div>
 
             <div class="form-field form-field-wide emoji-field" id="dish-emoji-field">
@@ -1135,6 +1205,18 @@ function renderDishForm(dish, recipe) {
                 throw new Error("Добавьте хотя бы один ингредиент или снимите публикацию.");
             }
 
+            const allowedCategoryMenus = categoryMenuTypes(menuType);
+            const allowedCategoryIds = new Set();
+
+            for (const allowedMenu of allowedCategoryMenus) {
+                for (const category of categories[allowedMenu] || []) {
+                    allowedCategoryIds.add(Number(category.id));
+                }
+            }
+
+            const categoryIds = [...selectedCategoryIds]
+                .filter((categoryId) => allowedCategoryIds.has(categoryId));
+
             const payload = {
                 name,
                 description,
@@ -1143,6 +1225,7 @@ function renderDishForm(dish, recipe) {
                 emoji: emoji || DEFAULT_DISH_EMOJI,
                 is_available: isAvailable,
                 menu_type: menuType,
+                category_ids: categoryIds,
                 ingredients
             };
 
@@ -1223,8 +1306,88 @@ function renderDishForm(dish, recipe) {
                 availableCheckbox.checked = true;
             }
             syncVisibilityControls();
+            renderCategoryChoices();
         });
         syncVisibilityControls();
+    }
+
+    const categoryOptions = overlay.querySelector("#dish-category-options");
+    const categoriesHint = overlay.querySelector("#dish-categories-hint");
+
+    function renderCategoryChoices() {
+        if (!categoryOptions || !menuTypeSelect) {
+            return;
+        }
+
+        const menuTypes = categoryMenuTypes(menuTypeSelect.value);
+
+        if (menuTypes.length === 0) {
+            categoryOptions.innerHTML = `<p class="hint">Для этого типа меню категории недоступны.</p>`;
+            return;
+        }
+
+        categoryOptions.innerHTML = menuTypes.map((menuType) => {
+            const list = categories[menuType] || [];
+            const heading = menuTypes.length > 1
+                ? `<div class="category-choice-title">${escapeHtml(CATEGORY_MENU_LABELS[menuType])}</div>`
+                : "";
+
+            if (list.length === 0) {
+                return `
+                    <div class="category-choice-group">
+                        ${heading}
+                        <p class="hint">Категорий этого меню пока нет. Добавьте их во вкладке «Фильтры».</p>
+                    </div>
+                `;
+            }
+
+            const options = list.map((category) => {
+                const categoryId = Number(category.id);
+                const checked = selectedCategoryIds.has(categoryId) ? "checked" : "";
+
+                return `
+                    <label class="category-choice">
+                        <input type="checkbox" data-category-id="${categoryId}" ${checked}>
+                        <span>${escapeHtml(category.name)}</span>
+                    </label>
+                `;
+            }).join("");
+
+            return `
+                <div class="category-choice-group">
+                    ${heading}
+                    <div class="category-choice-items">${options}</div>
+                </div>
+            `;
+        }).join("");
+
+        if (categoriesHint) {
+            if (menuTypeSelect.value === "hidden") {
+                categoriesHint.textContent = "Блюдо скрыто: категории не показываются клиентам. Доступны категории прежнего меню.";
+            } else if (menuTypes.length > 1) {
+                categoriesHint.textContent = "Доступны категории домашнего и банкетного меню. Можно выбрать несколько.";
+            } else {
+                categoriesHint.textContent = `Доступны категории меню «${CATEGORY_MENU_LABELS[menuTypes[0]]}». Можно выбрать несколько.`;
+            }
+        }
+    }
+
+    if (categoryOptions) {
+        categoryOptions.addEventListener("change", (event) => {
+            const input = event.target.closest("[data-category-id]");
+            if (!input) {
+                return;
+            }
+
+            const categoryId = Number(input.dataset.categoryId);
+            if (input.checked) {
+                selectedCategoryIds.add(categoryId);
+            } else {
+                selectedCategoryIds.delete(categoryId);
+            }
+        });
+
+        renderCategoryChoices();
     }
 
     const photoInput = overlay.querySelector("#dish-photo-input");
@@ -1599,6 +1762,200 @@ async function renderIngredientsPage() {
     await loadIngredientsPage();
 }
 
+function renderCategoriesTable(menu, categories) {
+    const tbody = document.querySelector(`#categories-${menu}-list`);
+    if (!tbody) {
+        return;
+    }
+
+    if (categories.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="3" class="empty-cell">Категорий пока нет. Нажмите «Добавить».</td></tr>`;
+        return;
+    }
+
+    tbody.innerHTML = categories.map((category) => {
+        const usage = Number(category.dish_count) || 0;
+
+        return `
+            <tr>
+                <td>${escapeHtml(category.name)}</td>
+                <td>${usage > 0 ? usage : "—"}</td>
+                <td class="actions-cell">
+                    <button class="action-button" data-action="edit" data-id="${category.id}" data-menu="${menu}">
+                        Редактировать
+                    </button>
+                    <button class="action-button action-danger" data-action="delete" data-id="${category.id}" data-menu="${menu}">
+                        Удалить
+                    </button>
+                </td>
+            </tr>
+        `;
+    }).join("");
+}
+
+async function loadCategoriesPage() {
+    const bodies = ["home", "banquet"]
+        .map((menu) => document.querySelector(`#categories-${menu}-list`))
+        .filter(Boolean);
+
+    bodies.forEach((tbody) => {
+        tbody.innerHTML = `<tr><td colspan="3" class="empty-cell">Загрузка категорий...</td></tr>`;
+    });
+
+    try {
+        const categories = await loadCategories();
+        renderCategoriesTable("home", categories.home);
+        renderCategoriesTable("banquet", categories.banquet);
+    } catch (error) {
+        bodies.forEach((tbody) => {
+            tbody.innerHTML = `<tr><td colspan="3" class="empty-cell error-text">${escapeHtml(humanizeError(error.message))}</td></tr>`;
+        });
+    }
+}
+
+async function handleCategoryAction(event) {
+    const button = event.target.closest("button[data-action]");
+    if (!button) {
+        return;
+    }
+
+    const menu = button.dataset.menu;
+    const category = (state.categories[menu] || [])
+        .find((item) => item.id === Number(button.dataset.id));
+
+    if (!category) {
+        return;
+    }
+
+    if (button.dataset.action === "edit") {
+        openCategoryForm(category, menu);
+    } else if (button.dataset.action === "delete") {
+        await deleteCategory(category, menu);
+    }
+}
+
+function openCategoryForm(category, menu) {
+    const isEditing = Boolean(category);
+    const menuLabel = CATEGORY_MENU_LABELS[menu] || "";
+
+    const body = `
+        <div class="form-grid">
+            <div class="form-field form-field-wide">
+                <label for="category-name">Название *</label>
+                <input id="category-name" maxlength="120" required value="${escapeHtml(category?.name || "")}">
+            </div>
+        </div>
+        <p class="hint">
+            Категория относится к меню «${escapeHtml(menuLabel)}». Одинаковые названия в другом меню считаются отдельными категориями.
+        </p>
+    `;
+
+    openModal({
+        title: isEditing ? `Переименовать категорию · ${menuLabel}` : `Новая категория · ${menuLabel}`,
+        body,
+        submitLabel: "Сохранить",
+        onSubmit: async (form) => {
+            const name = form.querySelector("#category-name").value.trim();
+
+            if (!name) {
+                throw new Error("Укажите название категории.");
+            }
+
+            if (isEditing) {
+                await api(`/api/admin/categories/${category.id}`, {
+                    method: "PUT",
+                    body: JSON.stringify({ name })
+                });
+                toast("Категория сохранена", "success");
+            } else {
+                await api("/api/admin/categories", {
+                    method: "POST",
+                    body: JSON.stringify({ name, menu_type: menu })
+                });
+                toast("Категория добавлена", "success");
+            }
+
+            if (state.page === "categories") {
+                await loadCategoriesPage();
+            }
+        }
+    });
+}
+
+async function deleteCategory(category, menu) {
+    const usage = Number(category.dish_count) || 0;
+    let message = `Удалить категорию «${category.name}»?`;
+
+    if (usage > 0) {
+        message += `\n\nКатегория назначена ${usage} блюд(ам). При удалении она будет снята с этих блюд, сами блюда сохранятся.`;
+    }
+
+    if (!window.confirm(message)) {
+        return;
+    }
+
+    try {
+        await api(`/api/admin/categories/${category.id}`, { method: "DELETE" });
+        toast("Категория удалена", "success");
+
+        if (state.page === "categories") {
+            await loadCategoriesPage();
+        }
+    } catch (error) {
+        toast(error.message, "error");
+    }
+}
+
+function categoriesGroupHtml(menu) {
+    return `
+        <section class="category-group">
+            <div class="category-group-head">
+                <h2>${escapeHtml(CATEGORY_MENU_LABELS[menu])}</h2>
+                <button class="primary-button" data-add-category="${menu}">+ Добавить</button>
+            </div>
+
+            <div class="table-container">
+                <table class="dishes-table">
+                    <thead>
+                        <tr>
+                            <th>Название</th>
+                            <th>Блюд</th>
+                            <th>Действия</th>
+                        </tr>
+                    </thead>
+                    <tbody id="categories-${menu}-list">
+                        <tr><td colspan="3" class="empty-cell">Загрузка категорий...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    `;
+}
+
+async function renderCategoriesPage() {
+    pageContent.innerHTML = `
+        <div class="category-groups">
+            ${categoriesGroupHtml("home")}
+            ${categoriesGroupHtml("banquet")}
+        </div>
+
+        <p class="hint page-hint">
+            Категории домашнего и банкетного меню независимы. Клиент видит их как фильтры над каталогом выбранного меню.
+        </p>
+    `;
+
+    pageContent.querySelectorAll("[data-add-category]").forEach((button) => {
+        button.addEventListener("click", () => openCategoryForm(null, button.dataset.addCategory));
+    });
+
+    ["home", "banquet"].forEach((menu) => {
+        pageContent.querySelector(`#categories-${menu}-list`)
+            .addEventListener("click", handleCategoryAction);
+    });
+
+    await loadCategoriesPage();
+}
+
 function renderOrdersTable(orders) {
     const tbody = document.querySelector("#orders-list");
     if (!tbody) {
@@ -1851,6 +2208,10 @@ const pages = {
     ingredients: {
         title: "Ингредиенты",
         render: renderIngredientsPage
+    },
+    categories: {
+        title: "Фильтры",
+        render: renderCategoriesPage
     },
     orders: {
         title: "Заказы",

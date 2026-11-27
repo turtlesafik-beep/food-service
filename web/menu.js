@@ -9,6 +9,7 @@ const MENU_LABELS = {
 
 const menuList = document.querySelector("#menu-list");
 const menuStatus = document.querySelector("#menu-status");
+const menuFilters = document.querySelector("#menu-filters");
 const menuHeading = document.querySelector("#menu-heading");
 const menuChoice = document.querySelector("#menu-choice");
 const menuChoiceButtons = document.querySelectorAll("[data-menu-choice]");
@@ -40,6 +41,10 @@ const state = {
     dishes: [],
     dishIndex: new Map(),
     activeMenu: null,
+    activeCategoryId: null,
+    categories: [],
+    categoriesLoading: false,
+    categoriesError: null,
     menuLoaded: false,
     menuLoading: false,
     catalogLoading: false,
@@ -58,6 +63,7 @@ const state = {
 let lastCartTrigger = null;
 let lastCheckoutTrigger = null;
 let menuRequestId = 0;
+let categoryRequestId = 0;
 
 function escapeHtml(value) {
     return String(value ?? "")
@@ -376,13 +382,29 @@ function renderMenu() {
         return;
     }
 
-    menuList.innerHTML = state.dishes.map(dishCardHtml).join("");
-    menuStatus.textContent = `${state.dishes.length} ${plural(
-        state.dishes.length,
-        "блюдо",
-        "блюда",
-        "блюд"
-    )} в меню`;
+    const dishes = filteredMenuDishes();
+    const category = activeCategory();
+
+    if (dishes.length === 0) {
+        menuList.innerHTML = `
+            <div class="menu-empty">
+                <div class="menu-empty-icon" aria-hidden="true">🌿</div>
+                <h3>В этой категории пока нет блюд</h3>
+                <p>Выберите другую категорию или посмотрите всё меню.</p>
+                <button class="button button-ghost" type="button" data-category-reset>Показать все</button>
+            </div>
+        `;
+        menuStatus.textContent = category
+            ? `В категории «${category.name}» нет доступных блюд.`
+            : "Пока нет доступных блюд.";
+        menuList.setAttribute("aria-busy", "false");
+        return;
+    }
+
+    menuList.innerHTML = dishes.map(dishCardHtml).join("");
+    menuStatus.textContent = category
+        ? `${dishes.length} ${plural(dishes.length, "блюдо", "блюда", "блюд")} в категории «${category.name}»`
+        : `${dishes.length} ${plural(dishes.length, "блюдо", "блюда", "блюд")} в меню`;
     menuList.setAttribute("aria-busy", "false");
 
     menuList.querySelectorAll(".dish-photo img").forEach((image) => {
@@ -500,6 +522,169 @@ async function fetchDishes(menu) {
     return dishes;
 }
 
+async function fetchCategories(menu) {
+    const response = await fetch(`/api/categories?menu=${encodeURIComponent(menu)}`, {
+        cache: "no-store"
+    });
+
+    if (!response.ok) {
+        throw new Error(`Ошибка ${response.status}`);
+    }
+
+    const categories = await response.json();
+
+    if (!Array.isArray(categories)) {
+        throw new Error("Некорректный ответ сервера");
+    }
+
+    return categories;
+}
+
+function activeCategory() {
+    return state.categories.find((category) => Number(category.id) === state.activeCategoryId) || null;
+}
+
+function renderCategoryFilters() {
+    if (!menuFilters) {
+        return;
+    }
+
+    if (!state.activeMenu) {
+        menuFilters.hidden = true;
+        menuFilters.innerHTML = "";
+        menuFilters.setAttribute("aria-busy", "false");
+        return;
+    }
+
+    const buttons = [
+        `<button
+            class="menu-filter-button"
+            type="button"
+            data-category-filter="all"
+            aria-pressed="${state.activeCategoryId === null}"
+        >Все</button>`
+    ];
+
+    for (const category of state.categories) {
+        const categoryId = Number(category.id);
+        if (!Number.isInteger(categoryId) || categoryId <= 0) {
+            continue;
+        }
+
+        buttons.push(`
+            <button
+                class="menu-filter-button"
+                type="button"
+                data-category-filter="${categoryId}"
+                aria-pressed="${state.activeCategoryId === categoryId}"
+            >${escapeHtml(category.name)}</button>
+        `);
+    }
+
+    if (state.categoriesError) {
+        buttons.push(`
+            <span class="menu-filter-note">Не удалось загрузить категории</span>
+            <button class="menu-filter-retry" type="button" data-category-retry>Повторить</button>
+        `);
+    }
+
+    menuFilters.hidden = false;
+    menuFilters.innerHTML = buttons.join("");
+    menuFilters.setAttribute("aria-busy", String(state.categoriesLoading));
+}
+
+async function loadCategories(menu) {
+    const requestId = ++categoryRequestId;
+
+    state.categoriesLoading = true;
+    state.categoriesError = null;
+    renderCategoryFilters();
+
+    try {
+        const categories = await fetchCategories(menu);
+
+        if (requestId !== categoryRequestId || state.activeMenu !== menu) {
+            return;
+        }
+
+        state.categories = categories;
+        state.categoriesLoading = false;
+        state.categoriesError = null;
+        renderCategoryFilters();
+    } catch (error) {
+        if (requestId !== categoryRequestId || state.activeMenu !== menu) {
+            return;
+        }
+
+        state.categories = [];
+        state.categoriesLoading = false;
+        state.categoriesError = error;
+        state.activeCategoryId = null;
+
+        renderCategoryFilters();
+        toast("Не удалось загрузить фильтры. Показаны все блюда.", "error");
+        renderMenu();
+    }
+}
+
+function resetCategorySelection() {
+    categoryRequestId += 1;
+
+    state.categories = [];
+    state.activeCategoryId = null;
+    state.categoriesLoading = false;
+    state.categoriesError = null;
+
+    renderCategoryFilters();
+}
+
+function setActiveCategory(categoryId) {
+    if (state.activeCategoryId === categoryId) {
+        return;
+    }
+
+    state.activeCategoryId = categoryId;
+    renderCategoryFilters();
+    renderMenu();
+}
+
+function filteredMenuDishes() {
+    if (state.activeCategoryId === null) {
+        return state.dishes;
+    }
+
+    return state.dishes.filter((dish) => {
+        const categoryIds = Array.isArray(dish.category_ids) ? dish.category_ids : [];
+        return categoryIds.some((categoryId) => Number(categoryId) === state.activeCategoryId);
+    });
+}
+
+function handleCategoryFilterClick(event) {
+    if (event.target.closest("[data-category-retry]")) {
+        if (state.activeMenu) {
+            loadCategories(state.activeMenu);
+        }
+        return;
+    }
+
+    const button = event.target.closest("[data-category-filter]");
+    if (!button) {
+        return;
+    }
+
+    if (button.dataset.categoryFilter === "all") {
+        setActiveCategory(null);
+        return;
+    }
+
+    const categoryId = Number(button.dataset.categoryFilter);
+    if (!Number.isInteger(categoryId) || categoryId <= 0) {
+        return;
+    }
+
+    setActiveCategory(categoryId);
+}
+
 // Полный публичный каталог нужен корзине: в ней могут быть блюда из другого меню.
 async function loadCatalog() {
     state.catalogLoading = true;
@@ -604,8 +789,10 @@ function selectMenu(menu) {
     }
 
     state.activeMenu = menu;
+    resetCategorySelection();
     updateMenuChoiceUI();
     renderMenuHeading();
+    loadCategories(menu);
     loadMenu();
     scrollToMenu();
 }
@@ -617,6 +804,7 @@ function resetMenuSelection() {
     state.dishes = [];
     state.menuLoading = false;
     state.menuError = null;
+    resetCategorySelection();
 
     updateMenuChoiceUI();
     renderMenuHeading();
@@ -628,6 +816,7 @@ function resetMenuSelection() {
 
 function reloadDishes() {
     if (state.activeMenu) {
+        loadCategories(state.activeMenu);
         loadMenu();
         return;
     }
@@ -652,6 +841,11 @@ function handleMenuClick(event) {
     if (event.target.closest("[data-menu-choose]")) {
         scrollToMenuChoice();
         focusMenuChoice();
+        return;
+    }
+
+    if (event.target.closest("[data-category-reset]")) {
+        setActiveCategory(null);
         return;
     }
 
@@ -1035,6 +1229,10 @@ function bindEvents() {
     });
 
     menuList.addEventListener("click", handleMenuClick);
+
+    if (menuFilters) {
+        menuFilters.addEventListener("click", handleCategoryFilterClick);
+    }
 
     menuChoiceButtons.forEach((button) => {
         button.addEventListener("click", () => {

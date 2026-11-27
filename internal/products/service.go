@@ -298,6 +298,13 @@ func (s *Service) CreateDish(input DishInput) (int64, error) {
 		}
 	}
 
+	if input.CategoryIDs != nil {
+		allowedMenuTypes := categoryMenuTypesForDish(menuType, previousMenuType)
+		if err := s.saveDishCategories(tx, id, *input.CategoryIDs, allowedMenuTypes); err != nil {
+			return 0, err
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return 0, fmt.Errorf("commit dish transaction: %w", err)
 	}
@@ -329,7 +336,16 @@ func (s *Service) GetDishes() ([]Dish, error) {
 	}
 	defer rows.Close()
 
-	return scanDishRows(rows)
+	dishes, err := scanDishRows(rows)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := s.attachAdminDishCategories(dishes); err != nil {
+		return nil, err
+	}
+
+	return dishes, nil
 }
 
 // GetPublicDishes returns published dishes for the public catalog. An empty
@@ -391,6 +407,10 @@ func (s *Service) GetPublicDishes(menu string) ([]Dish, error) {
 	}
 	if err := rows.Close(); err != nil {
 		return nil, fmt.Errorf("close dish rows: %w", err)
+	}
+
+	if err := s.attachPublicDishCategories(dishes, menu); err != nil {
+		return nil, err
 	}
 
 	for i := range dishes {
@@ -530,6 +550,13 @@ func (s *Service) UpdateDish(id int64, input DishInput) error {
 		return ErrDishNotFound
 	}
 
+	if input.CategoryIDs != nil {
+		allowedMenuTypes := categoryMenuTypesForDish(menuType, previousMenuType)
+		if err := s.saveDishCategories(tx, id, *input.CategoryIDs, allowedMenuTypes); err != nil {
+			return err
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit dish transaction: %w", err)
 	}
@@ -624,6 +651,13 @@ func (s *Service) DeleteDish(id int64) (string, error) {
 		WHERE dish_id = ?
 	`, id); err != nil {
 		return "", fmt.Errorf("delete dish recipe: %w", err)
+	}
+
+	if _, err := tx.Exec(`
+		DELETE FROM dish_categories
+		WHERE dish_id = ?
+	`, id); err != nil {
+		return "", fmt.Errorf("delete dish categories: %w", err)
 	}
 
 	if _, err := tx.Exec(`DELETE FROM dishes WHERE id = ?`, id); err != nil {

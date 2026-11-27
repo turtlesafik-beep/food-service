@@ -30,7 +30,9 @@ func writeProductError(w http.ResponseWriter, err error) {
 	var conflictErr *ConflictError
 
 	switch {
-	case errors.Is(err, ErrDishNotFound), errors.Is(err, ErrIngredientNotFound):
+	case errors.Is(err, ErrDishNotFound),
+		errors.Is(err, ErrIngredientNotFound),
+		errors.Is(err, ErrCategoryNotFound):
 		http.Error(w, err.Error(), http.StatusNotFound)
 	case errors.As(err, &conflictErr):
 		http.Error(w, conflictErr.Message, http.StatusConflict)
@@ -87,6 +89,17 @@ func parseIngredientID(path string) (int64, error) {
 	id, err := strconv.ParseInt(idValue, 10, 64)
 	if err != nil || id <= 0 {
 		return 0, fmt.Errorf("invalid ingredient ID")
+	}
+
+	return id, nil
+}
+
+func parseCategoryID(path string) (int64, error) {
+	idValue := strings.TrimPrefix(path, "/api/admin/categories/")
+
+	id, err := strconv.ParseInt(idValue, 10, 64)
+	if err != nil || id <= 0 {
+		return 0, fmt.Errorf("invalid category ID")
 	}
 
 	return id, nil
@@ -279,6 +292,82 @@ func (h *Handler) DeleteIngredient(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.Service.DeleteIngredient(id); err != nil {
+		writeProductError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) GetCategories(w http.ResponseWriter, r *http.Request) {
+	menuType := strings.TrimSpace(r.URL.Query().Get("menu"))
+
+	categories, err := h.Service.GetCategories(menuType)
+	if err != nil {
+		writeProductError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+
+	if err := json.NewEncoder(w).Encode(categories); err != nil {
+		writeProductError(w, err)
+	}
+}
+
+func (h *Handler) CreateCategory(w http.ResponseWriter, r *http.Request) {
+	var input CategoryInput
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	id, err := h.Service.CreateCategory(input)
+	if err != nil {
+		writeProductError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+
+	json.NewEncoder(w).Encode(map[string]interface{}{
+		"message": "Category created successfully",
+		"id":      id,
+	})
+}
+
+func (h *Handler) UpdateCategory(w http.ResponseWriter, r *http.Request) {
+	id, err := parseCategoryID(r.URL.Path)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	var input CategoryRenameInput
+
+	if err := json.NewDecoder(r.Body).Decode(&input); err != nil {
+		http.Error(w, "Invalid JSON", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.Service.UpdateCategory(id, input); err != nil {
+		writeProductError(w, err)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) DeleteCategory(w http.ResponseWriter, r *http.Request) {
+	id, err := parseCategoryID(r.URL.Path)
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
+
+	if err := h.Service.DeleteCategory(id); err != nil {
 		writeProductError(w, err)
 		return
 	}

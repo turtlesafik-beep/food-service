@@ -21,6 +21,15 @@ func InitSchema(db *sql.DB) error {
 		photo_url TEXT NOT NULL DEFAULT ''
 	);
 
+	CREATE TABLE IF NOT EXISTS categories (
+		id INTEGER PRIMARY KEY,
+		name TEXT NOT NULL,
+		name_key TEXT NOT NULL,
+		menu_type TEXT NOT NULL
+			CHECK(menu_type IN ('home', 'banquet')),
+		UNIQUE(menu_type, name_key)
+	);
+
 	CREATE TABLE IF NOT EXISTS ingredients (
 		id INTEGER PRIMARY KEY,
 		name TEXT NOT NULL,
@@ -36,6 +45,15 @@ func InitSchema(db *sql.DB) error {
 		FOREIGN KEY (dish_id) REFERENCES dishes(id),
 		FOREIGN KEY (ingredient_id) REFERENCES ingredients(id),
 		UNIQUE(dish_id, ingredient_id)
+	);
+
+	CREATE TABLE IF NOT EXISTS dish_categories (
+		id INTEGER PRIMARY KEY,
+		dish_id INTEGER NOT NULL,
+		category_id INTEGER NOT NULL,
+		FOREIGN KEY (dish_id) REFERENCES dishes(id) ON DELETE CASCADE,
+		FOREIGN KEY (category_id) REFERENCES categories(id) ON DELETE CASCADE,
+		UNIQUE(dish_id, category_id)
 	);
 
 	CREATE TABLE IF NOT EXISTS orders (
@@ -79,6 +97,12 @@ func InitSchema(db *sql.DB) error {
 		ON order_ingredients(order_item_id);
 	CREATE INDEX IF NOT EXISTS idx_orders_customer_phone
 		ON orders(customer_phone);
+	CREATE INDEX IF NOT EXISTS idx_categories_menu_type
+		ON categories(menu_type);
+	CREATE INDEX IF NOT EXISTS idx_dish_categories_dish_id
+		ON dish_categories(dish_id);
+	CREATE INDEX IF NOT EXISTS idx_dish_categories_category_id
+		ON dish_categories(category_id);
 	`
 
 	_, err := db.Exec(query)

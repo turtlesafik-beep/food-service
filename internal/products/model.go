@@ -21,6 +21,7 @@ type Dish struct {
 	HasRecipe        bool               `json:"has_recipe"`
 	Emoji            string             `json:"emoji"`
 	PhotoURL         string             `json:"photo_url"`
+	CategoryIDs      []int64            `json:"category_ids"`
 	Ingredients      []RecipeIngredient `json:"ingredients,omitempty"`
 }
 
@@ -28,13 +29,16 @@ type Dish struct {
 // Ingredients == nil means "do not change the recipe" on update. An empty
 // non-nil slice is rejected because a published dish must have a recipe.
 type DishInput struct {
-	Name        string                  `json:"name"`
-	Description string                  `json:"description"`
-	WeightGrams *int                    `json:"weight_grams"`
-	Price       int64                   `json:"price"`
-	IsAvailable *bool                   `json:"is_available"`
-	MenuType    *string                 `json:"menu_type"`
-	Emoji       string                  `json:"emoji"`
+	Name        string  `json:"name"`
+	Description string  `json:"description"`
+	WeightGrams *int    `json:"weight_grams"`
+	Price       int64   `json:"price"`
+	IsAvailable *bool   `json:"is_available"`
+	MenuType    *string `json:"menu_type"`
+	Emoji       string  `json:"emoji"`
+	// CategoryIDs == nil means "do not change assignments" on update. An empty
+	// non-nil slice clears the categories that are compatible with the menu.
+	CategoryIDs *[]int64                `json:"category_ids"`
 	Ingredients []RecipeIngredientInput `json:"ingredients"`
 }
 
@@ -51,4 +55,20 @@ type Ingredient struct {
 type IngredientInput struct {
 	Name string `json:"name"`
 	Unit string `json:"unit"`
+}
+
+type Category struct {
+	ID        int64  `json:"id"`
+	Name      string `json:"name"`
+	MenuType  string `json:"menu_type"`
+	DishCount int    `json:"dish_count"`
+}
+
+type CategoryInput struct {
+	Name     string `json:"name"`
+	MenuType string `json:"menu_type"`
+}
+
+type CategoryRenameInput struct {
+	Name string `json:"name"`
 }

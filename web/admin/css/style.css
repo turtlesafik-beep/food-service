@@ -1188,6 +1188,98 @@ body.modal-open {
     font-size: 13px;
 }
 
+/* ---------- Dish categories ---------- */
+
+.category-groups {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 20px;
+    align-items: start;
+}
+
+.category-group {
+    min-width: 0;
+}
+
+.category-group-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.category-group-head h2 {
+    color: var(--text);
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+
+.category-choice-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.category-choice-group {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+}
+
+.category-choice-title {
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+}
+
+.category-choice-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.category-choice {
+    display: inline-flex !important;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--text) !important;
+    font-size: 13px;
+    font-weight: 500 !important;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.category-choice:hover {
+    border-color: var(--border-strong);
+    background: var(--surface-hover);
+}
+
+.category-choice input {
+    width: 15px;
+    height: 15px;
+    margin: 0;
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    box-shadow: none;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
+.category-choice:has(input:checked) {
+    background: var(--accent-soft);
+    border-color: var(--accent-border);
+    color: var(--accent-strong) !important;
+}
+
 /* ---------- Toasts ---------- */
 
 .toast-root {
@@ -1283,7 +1375,8 @@ body.modal-open {
     }
 
     .form-grid,
-    .order-meta {
+    .order-meta,
+    .category-groups {
         grid-template-columns: 1fr;
     }
 

@@ -8,6 +8,7 @@ import (
 var (
 	ErrDishNotFound       = errors.New("dish not found")
 	ErrIngredientNotFound = errors.New("ingredient not found")
+	ErrCategoryNotFound   = errors.New("category not found")
 )
 
 // ValidationError describes a user-facing validation problem.

@@ -77,6 +77,8 @@ func main() {
 
 	http.HandleFunc("GET /api/dishes", productHandler.GetPublicDishes)
 
+	http.HandleFunc("GET /api/categories", productHandler.GetCategories)
+
 	http.HandleFunc("GET /media/dishes/{filename}", productHandler.ServeDishPhoto)
 
 	http.HandleFunc("GET /api/admin/orders", adminAuth(orderHandler.GetOrders))
@@ -137,6 +139,26 @@ func main() {
 			productHandler.UpdateIngredient(w, r)
 		case http.MethodDelete:
 			productHandler.DeleteIngredient(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	}))
+
+	http.HandleFunc("/api/admin/categories", adminAuth(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPost:
+			productHandler.CreateCategory(w, r)
+		default:
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+		}
+	}))
+
+	http.HandleFunc("/api/admin/categories/", adminAuth(func(w http.ResponseWriter, r *http.Request) {
+		switch r.Method {
+		case http.MethodPut:
+			productHandler.UpdateCategory(w, r)
+		case http.MethodDelete:
+			productHandler.DeleteCategory(w, r)
 		default:
 			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
 		}
