@@ -231,7 +231,7 @@ p {
 .hero {
     position: relative;
     overflow: hidden;
-    padding: clamp(42px, 6vw, 82px) 0 clamp(48px, 7vw, 98px);
+    padding: clamp(26px, 4vw, 54px) 0 clamp(32px, 5vw, 68px);
 }
 
 .hero::before {
@@ -271,7 +271,7 @@ p {
 .hero h1 {
     margin: 0;
     font-family: var(--font-display);
-    font-size: clamp(46px, 7vw, 82px);
+    font-size: clamp(42px, 6vw, 68px);
     font-weight: 600;
     letter-spacing: -0.02em;
     line-height: 0.98;
@@ -285,24 +285,73 @@ p {
 
 .hero-lead {
     max-width: 540px;
-    margin: 22px 0 0;
+    margin: 18px 0 0;
     color: var(--text-muted);
     font-size: clamp(15px, 1.4vw, 17px);
-    line-height: 1.75;
+    line-height: 1.7;
 }
 
-.hero-actions {
+.menu-choice {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    max-width: 520px;
+    margin-top: 26px;
+}
+
+.menu-choice-option {
     display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    margin-top: 30px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    min-height: 54px;
+    padding: 13px 16px;
+    border: 1px solid var(--line-strong);
+    border-radius: 16px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 14px;
+    font-weight: 700;
+    line-height: 1.25;
+    text-align: left;
+    transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.menu-choice-option::after {
+    flex: none;
+    color: var(--text-faint);
+    content: "→";
+    font-weight: 400;
+    transition: color 0.2s ease;
+}
+
+.menu-choice-option:hover {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+
+.menu-choice-option:hover::after {
+    color: var(--accent);
+}
+
+.menu-choice-option[aria-pressed="true"] {
+    border-color: var(--accent);
+    background: var(--accent);
+    color: #fff;
+    box-shadow: 0 10px 24px rgba(91, 112, 74, 0.22);
+}
+
+.menu-choice-option[aria-pressed="true"]::after {
+    color: #fff;
+    content: "✓";
 }
 
 .hero-points {
     display: flex;
     flex-wrap: wrap;
     gap: 12px 22px;
-    margin: 30px 0 0;
+    margin: 22px 0 0;
     padding: 0;
     color: var(--text-muted);
     font-size: 13px;
@@ -465,6 +514,31 @@ p {
     color: var(--text-muted);
     font-size: 14px;
     line-height: 1.7;
+}
+
+.menu-head-aside {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 12px;
+}
+
+.menu-switch {
+    min-height: 38px;
+    padding: 8px 15px;
+    border: 1px solid var(--line-strong);
+    border-radius: 999px;
+    background: transparent;
+    color: var(--text-muted);
+    font-size: 12.5px;
+    font-weight: 700;
+    transition: border-color 0.2s ease, background 0.2s ease, color 0.2s ease;
+}
+
+.menu-switch:hover {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+    color: var(--accent);
 }
 
 .menu-status {
@@ -1539,6 +1613,10 @@ body.has-floating-cart {
         max-width: 520px;
     }
 
+    .menu-head-aside {
+        align-items: flex-start;
+    }
+
     .steps {
         grid-template-columns: 1fr;
     }
@@ -1680,8 +1758,8 @@ body.has-floating-cart {
         font-size: clamp(42px, 12vw, 58px);
     }
 
-    .hero-actions .button {
-        width: 100%;
+    .menu-choice {
+        grid-template-columns: 1fr;
     }
 
     .hero-points {

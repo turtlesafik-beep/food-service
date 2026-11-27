@@ -2,8 +2,17 @@
 
 const CART_STORAGE_KEY = "food-service-cart-v1";
 
+const MENU_LABELS = {
+    home: "Домашнее меню",
+    banquet: "Банкетное меню"
+};
+
 const menuList = document.querySelector("#menu-list");
 const menuStatus = document.querySelector("#menu-status");
+const menuHeading = document.querySelector("#menu-heading");
+const menuChoice = document.querySelector("#menu-choice");
+const menuChoiceButtons = document.querySelectorAll("[data-menu-choice]");
+const menuSwitch = document.querySelector("[data-menu-switch]");
 const floatingCart = document.querySelector("#floating-cart");
 const floatingCartSummary = document.querySelector("[data-cart-summary]");
 const cartCounters = document.querySelectorAll("[data-cart-count]");
@@ -29,8 +38,11 @@ const toastStack = document.querySelector("#toast-stack");
 
 const state = {
     dishes: [],
+    dishIndex: new Map(),
+    activeMenu: null,
     menuLoaded: false,
     menuLoading: false,
+    catalogLoading: false,
     menuError: null,
     cart: [],
     isCartOpen: false,
@@ -45,6 +57,7 @@ const state = {
 
 let lastCartTrigger = null;
 let lastCheckoutTrigger = null;
+let menuRequestId = 0;
 
 function escapeHtml(value) {
     return String(value ?? "")
@@ -136,7 +149,7 @@ function saveCart() {
 }
 
 function getDish(dishId) {
-    return state.dishes.find((dish) => dish.id === dishId) || null;
+    return state.dishIndex.get(dishId) || null;
 }
 
 function getCartDetails() {
@@ -167,7 +180,7 @@ function reconcileCart() {
         return;
     }
 
-    const availableIds = new Set(state.dishes.map((dish) => dish.id));
+    const availableIds = new Set(state.dishIndex.keys());
     const before = state.cart.length;
 
     state.cart = state.cart.filter((item) => availableIds.has(item.dishId));
@@ -412,17 +425,123 @@ function renderMenuError(error) {
     menuList.setAttribute("aria-busy", "false");
 }
 
+function renderMenuPlaceholder() {
+    menuList.innerHTML = `
+        <div class="menu-empty">
+            <div class="menu-empty-icon" aria-hidden="true">🍽️</div>
+            <h3>Выберите меню</h3>
+            <p>Домашнее меню — на каждый день, банкетное — для праздничного стола.</p>
+            <button class="button button-ghost" type="button" data-menu-choose>К выбору меню</button>
+        </div>
+    `;
+    menuStatus.textContent = "";
+    menuList.setAttribute("aria-busy", "false");
+}
+
+function updateMenuChoiceUI() {
+    menuChoiceButtons.forEach((button) => {
+        button.setAttribute(
+            "aria-pressed",
+            String(button.dataset.menuChoice === state.activeMenu)
+        );
+    });
+}
+
+function renderMenuHeading() {
+    if (menuHeading) {
+        menuHeading.textContent = state.activeMenu
+            ? MENU_LABELS[state.activeMenu]
+            : "Выберите блюда";
+    }
+    if (menuSwitch) {
+        menuSwitch.hidden = !state.activeMenu;
+    }
+}
+
+function scrollToMenuChoice() {
+    menuChoice?.scrollIntoView({ behavior: "smooth", block: "center" });
+}
+
+function focusMenuChoice() {
+    menuChoiceButtons[0]?.focus({ preventScroll: true });
+}
+
+function scrollToMenu() {
+    document.querySelector("#menu")?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function indexDishes(dishes, { reset = false } = {}) {
+    if (reset) {
+        state.dishIndex = new Map();
+    }
+
+    for (const dish of dishes) {
+        const dishId = Number(dish && dish.id);
+        if (Number.isInteger(dishId) && dishId > 0) {
+            state.dishIndex.set(dishId, dish);
+        }
+    }
+}
+
+async function fetchDishes(menu) {
+    const query = menu ? `?menu=${encodeURIComponent(menu)}` : "";
+    const response = await fetch(`/api/dishes${query}`, { cache: "no-store" });
+
+    if (!response.ok) {
+        throw new Error(`Ошибка ${response.status}`);
+    }
+
+    const dishes = await response.json();
+
+    if (!Array.isArray(dishes)) {
+        throw new Error("Некорректный ответ сервера");
+    }
+
+    return dishes;
+}
+
+// Полный публичный каталог нужен корзине: в ней могут быть блюда из другого меню.
+async function loadCatalog() {
+    state.catalogLoading = true;
+
+    try {
+        const dishes = await fetchDishes();
+
+        indexDishes(dishes, { reset: true });
+        state.menuLoaded = true;
+
+        reconcileCart();
+        updateCartUI();
+
+        if (state.isCheckoutOpen) {
+            renderCheckoutSummary();
+        }
+    } catch (error) {
+        // Метаданные корзины обновятся при выборе меню или при повторной загрузке.
+    } finally {
+        state.catalogLoading = false;
+
+        if (state.isCartOpen) {
+            renderCartDrawer();
+        }
+    }
+}
+
 async function loadMenu({ silent = false } = {}) {
-    if (state.menuLoading) {
+    const menu = state.activeMenu;
+    if (!menu) {
         return;
     }
+
+    const requestId = ++menuRequestId;
 
     state.menuLoading = true;
     state.menuError = null;
 
     if (!silent) {
+        state.dishes = [];
         renderMenuSkeleton();
-        menuStatus.textContent = "Загружаем меню…";
+        menuStatus.textContent = `Загружаем ${MENU_LABELS[menu].toLowerCase()}…`;
     }
 
     menuList.setAttribute("aria-busy", "true");
@@ -432,38 +551,38 @@ async function loadMenu({ silent = false } = {}) {
     }
 
     try {
-        const response = await fetch("/api/dishes", { cache: "no-store" });
+        const dishes = await fetchDishes(menu);
 
-        if (!response.ok) {
-            throw new Error(`Ошибка ${response.status}`);
-        }
-
-        const dishes = await response.json();
-
-        if (!Array.isArray(dishes)) {
-            throw new Error("Некорректный ответ сервера");
+        if (requestId !== menuRequestId) {
+            return;
         }
 
         state.dishes = dishes;
+        indexDishes(dishes);
         state.menuLoaded = true;
         state.menuError = null;
         state.menuLoading = false;
 
-        reconcileCart();
+        // Корзину не фильтруем по текущему меню: в ней могут быть блюда другого меню.
         renderMenu();
         updateCartUI();
     } catch (error) {
+        if (requestId !== menuRequestId) {
+            return;
+        }
+
         state.menuLoading = false;
         state.menuError = error;
 
-        if (!state.menuLoaded) {
-            state.dishes = [];
-            renderMenuError(error);
-            updateCartUI();
-        } else {
+        if (silent && state.dishes.length > 0) {
             toast("Не удалось обновить меню. Показано последнее загруженное.", "error");
             menuList.setAttribute("aria-busy", "false");
+        } else {
+            state.dishes = [];
+            renderMenuError(error);
         }
+
+        updateCartUI();
 
         if (state.isCartOpen) {
             renderCartDrawer();
@@ -474,10 +593,65 @@ async function loadMenu({ silent = false } = {}) {
     }
 }
 
-function handleMenuClick(event) {
-    const retryButton = event.target.closest("[data-menu-retry]");
-    if (retryButton) {
+function selectMenu(menu) {
+    if (!MENU_LABELS[menu]) {
+        return;
+    }
+
+    if (state.activeMenu === menu && !state.menuError) {
+        scrollToMenu();
+        return;
+    }
+
+    state.activeMenu = menu;
+    updateMenuChoiceUI();
+    renderMenuHeading();
+    loadMenu();
+    scrollToMenu();
+}
+
+function resetMenuSelection() {
+    menuRequestId += 1;
+
+    state.activeMenu = null;
+    state.dishes = [];
+    state.menuLoading = false;
+    state.menuError = null;
+
+    updateMenuChoiceUI();
+    renderMenuHeading();
+    renderMenuPlaceholder();
+    updateCartUI();
+    scrollToMenuChoice();
+    focusMenuChoice();
+}
+
+function reloadDishes() {
+    if (state.activeMenu) {
         loadMenu();
+        return;
+    }
+
+    loadCatalog();
+}
+
+async function refreshCatalogAndMenu() {
+    await loadCatalog();
+
+    if (state.activeMenu) {
+        await loadMenu({ silent: true });
+    }
+}
+
+function handleMenuClick(event) {
+    if (event.target.closest("[data-menu-retry]")) {
+        reloadDishes();
+        return;
+    }
+
+    if (event.target.closest("[data-menu-choose]")) {
+        scrollToMenuChoice();
+        focusMenuChoice();
         return;
     }
 
@@ -547,7 +721,7 @@ function cartItemHtml(item) {
 
 function renderCartDrawer() {
     if (!state.menuLoaded) {
-        if (state.menuLoading) {
+        if (state.menuLoading || state.catalogLoading) {
             cartBody.innerHTML = `
                 <div class="cart-empty">
                     <div class="cart-empty-icon" aria-hidden="true">⏳</div>
@@ -819,7 +993,7 @@ async function handleCheckoutSubmit(event) {
             checkoutError.textContent = message;
 
             if (/^dish (is unavailable|not found|has no ingredients):/.test(rawMessage)) {
-                await loadMenu({ silent: true });
+                await refreshCatalogAndMenu();
                 renderCheckoutSummary();
 
                 if (state.cart.length === 0) {
@@ -862,6 +1036,16 @@ function bindEvents() {
 
     menuList.addEventListener("click", handleMenuClick);
 
+    menuChoiceButtons.forEach((button) => {
+        button.addEventListener("click", () => {
+            selectMenu(button.dataset.menuChoice);
+        });
+    });
+
+    if (menuSwitch) {
+        menuSwitch.addEventListener("click", resetMenuSelection);
+    }
+
     cartClose.addEventListener("click", () => closeCart());
     cartBackdrop.addEventListener("click", () => closeCart());
 
@@ -874,13 +1058,17 @@ function bindEvents() {
         const action = button.dataset.cartAction;
 
         if (action === "retry") {
-            loadMenu();
+            reloadDishes();
             return;
         }
 
         if (action === "go-menu") {
             closeCart();
-            document.querySelector("#menu")?.scrollIntoView({ behavior: "smooth" });
+            if (state.activeMenu) {
+                scrollToMenu();
+            } else {
+                scrollToMenuChoice();
+            }
             return;
         }
 
@@ -968,7 +1156,10 @@ function init() {
     state.cart = loadCart();
     updateCartUI();
     bindEvents();
-    loadMenu();
+    updateMenuChoiceUI();
+    renderMenuHeading();
+    renderMenuPlaceholder();
+    loadCatalog();
 }
 
 init();

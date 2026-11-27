@@ -41,11 +41,19 @@
                         Выберите блюда, отправьте заказ — а мы соберём для вас точный список продуктов.
                     </p>
 
-                    <div class="hero-actions">
-                        <a class="button button-primary" href="#menu">Посмотреть меню</a>
-                        <button class="button button-ghost" type="button" data-open-cart>
-                            Открыть корзину
-                        </button>
+                    <div class="menu-choice" id="menu-choice" role="group" aria-label="Выбор меню">
+                        <button
+                            class="menu-choice-option"
+                            type="button"
+                            data-menu-choice="home"
+                            aria-pressed="false"
+                        >Домашнее меню</button>
+                        <button
+                            class="menu-choice-option"
+                            type="button"
+                            data-menu-choice="banquet"
+                            aria-pressed="false"
+                        >Банкетное меню</button>
                     </div>
 
                     <ul class="hero-points" aria-label="Преимущества">
@@ -167,11 +175,16 @@
                 <div class="section-head">
                     <div>
                         <p class="eyebrow">Меню</p>
-                        <h2>Выберите блюда</h2>
+                        <h2 id="menu-heading">Выберите блюда</h2>
                     </div>
-                    <p class="section-note">
-                        Все блюда доступны для заказа. Цены и состав указаны за одну порцию.
-                    </p>
+                    <div class="menu-head-aside">
+                        <p class="section-note">
+                            Все блюда доступны для заказа. Цены и состав указаны за одну порцию.
+                        </p>
+                        <button class="menu-switch" type="button" data-menu-switch hidden>
+                            ← Выбрать другое меню
+                        </button>
+                    </div>
                 </div>
 
                 <div class="menu-status" id="menu-status" role="status" aria-live="polite"></div>
