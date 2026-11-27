@@ -9,10 +9,9 @@ data/
 .env.*
 !.env.example
 
-# Let's Encrypt / certbot
-certbot/conf/
-certbot/www/*
-!certbot/www/.gitkeep
+# Let's Encrypt / certbot: сертификаты, приватные ключи и webroot
+# хранятся вне репозитория (на сервере — /etc/letsencrypt и /var/www/certbot).
+certbot/
 
 # IDE
 .vscode/

@@ -2008,22 +2008,3 @@ body.has-floating-cart {
         transition-duration: 0.01ms !important;
     }
 }
-
-.floating-cart.is-bumped {
-    animation: cart-bump 0.32s ease;
-}
-
-@keyframes cart-bump {
-    0%,
-    100% {
-        transform: translateY(0);
-    }
-
-    40% {
-        transform: translateY(-4px);
-    }
-
-    70% {
-        transform: translateY(0);
-    }
-}

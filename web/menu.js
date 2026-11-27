@@ -36,6 +36,7 @@ const customerComment = document.querySelector("#customer-comment");
 const nameError = document.querySelector("#name-error");
 const phoneError = document.querySelector("#phone-error");
 const toastStack = document.querySelector("#toast-stack");
+const reducedMotionQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
 
 const state = {
     dishes: [],
@@ -64,6 +65,7 @@ let lastCartTrigger = null;
 let lastCheckoutTrigger = null;
 let menuRequestId = 0;
 let categoryRequestId = 0;
+let cartBumpAnimation = null;
 
 function escapeHtml(value) {
     return String(value ?? "")
@@ -234,6 +236,47 @@ function updateCartUI() {
     syncDishCardControls();
 }
 
+function getCartBumpOffset() {
+    const translate = getComputedStyle(floatingCart).translate;
+    if (!translate || translate === "none") {
+        return 0;
+    }
+
+    return Number.parseFloat(translate.split(" ")[1]) || 0;
+}
+
+function bumpFloatingCart() {
+    if (floatingCart.hidden || reducedMotionQuery.matches || !floatingCart.animate) {
+        return;
+    }
+
+    const startY = cartBumpAnimation ? getCartBumpOffset() : 0;
+
+    if (cartBumpAnimation) {
+        cartBumpAnimation.cancel();
+    }
+
+    const animation = floatingCart.animate(
+        [
+            { translate: `0 ${startY}px`, offset: 0, easing: "ease" },
+            { translate: "0 -4px", offset: 0.4, easing: "ease" },
+            { translate: "0 0px", offset: 0.7, easing: "ease" },
+            { translate: "0 0px", offset: 1 }
+        ],
+        {
+            duration: 320
+        }
+    );
+
+    cartBumpAnimation = animation;
+
+    animation.onfinish = () => {
+        if (cartBumpAnimation === animation) {
+            cartBumpAnimation = null;
+        }
+    };
+}
+
 function addToCart(dishId) {
     const dish = getDish(dishId);
     if (!dish) {
@@ -250,11 +293,7 @@ function addToCart(dishId) {
 
     saveCart();
     updateCartUI();
-
-    floatingCart.classList.remove("is-bumped");
-    void floatingCart.offsetWidth;
-    floatingCart.classList.add("is-bumped");
-    window.setTimeout(() => floatingCart.classList.remove("is-bumped"), 360);
+    bumpFloatingCart();
 }
 
 function changeQuantity(dishId, delta) {
