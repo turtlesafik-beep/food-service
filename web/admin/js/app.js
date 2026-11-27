@@ -16,6 +16,21 @@ const UNIT_OPTIONS = ["g", "ml", "pcs"];
 
 const DEFAULT_DISH_EMOJI = "🍽️";
 
+const MENU_TYPE_LABELS = {
+    home: "Домашнее меню",
+    banquet: "Банкетное меню",
+    both: "Оба меню",
+    hidden: "Скрыто"
+};
+
+const DISH_FILTERS = [
+    { value: "all", label: "Все" },
+    { value: "home", label: "Домашнее меню" },
+    { value: "banquet", label: "Банкетное меню" },
+    { value: "both", label: "Оба меню" },
+    { value: "hidden", label: "Скрытые" }
+];
+
 const EMOJI_CATEGORIES = [
     {
         id: "meat",
@@ -167,6 +182,7 @@ const EMOJI_CATEGORIES = [
 const state = {
     page: "dishes",
     dishes: [],
+    dishesFilter: "all",
     ingredients: [],
     ingredientByKey: new Map(),
     orders: {
@@ -181,6 +197,10 @@ let closeModal = () => {};
 
 function unitLabel(unit) {
     return UNIT_LABELS[unit] || unit;
+}
+
+function menuTypeLabel(menuType) {
+    return MENU_TYPE_LABELS[menuType] || MENU_TYPE_LABELS.home;
 }
 
 function normalizeName(value) {
@@ -243,6 +263,7 @@ function humanizeError(message) {
         "dish description is required": "Укажите описание блюда.",
         "dish price cannot be negative": "Цена не может быть отрицательной.",
         "dish weight must be greater than zero": "Вес должен быть больше нуля.",
+        "invalid menu type": "Выберите корректную принадлежность к меню.",
         "ingredient name is required": "Укажите название ингредиента.",
         "ingredient quantity must be greater than zero": "Количество должно быть больше нуля.",
         "invalid ingredient unit": "Недопустимая единица измерения.",
@@ -482,37 +503,71 @@ async function loadDishes() {
     try {
         const dishes = await api("/api/admin/dishes");
         state.dishes = dishes;
-        renderDishesTable(dishes);
+        renderDishesTable();
     } catch (error) {
         tbody.innerHTML = `<tr><td colspan="6" class="empty-cell error-text">${escapeHtml(humanizeError(error.message))}</td></tr>`;
     }
 }
 
-function renderDishesTable(dishes) {
+function isDishPublished(dish) {
+    return Boolean(dish.is_available) && dish.menu_type !== "hidden";
+}
+
+function isDishHidden(dish) {
+    return dish.menu_type === "hidden" || !dish.is_available;
+}
+
+function filteredDishes() {
+    if (state.dishesFilter === "all") {
+        return state.dishes;
+    }
+
+    if (state.dishesFilter === "hidden") {
+        return state.dishes.filter(isDishHidden);
+    }
+
+    return state.dishes.filter((dish) => {
+        const matchesMenu = dish.menu_type === state.dishesFilter
+            || (dish.menu_type === "both" && ["home", "banquet"].includes(state.dishesFilter));
+        return matchesMenu && isDishPublished(dish);
+    });
+}
+
+function renderDishesTable() {
     const tbody = document.querySelector("#dishes-list");
     if (!tbody) {
         return;
     }
 
+    const dishes = filteredDishes();
+
     if (dishes.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" class="empty-cell">Блюд пока нет. Нажмите «Добавить блюдо».</td></tr>`;
+        const message = state.dishesFilter === "all"
+            ? "Блюд пока нет. Нажмите «Добавить блюдо»."
+            : "В этой категории блюд пока нет.";
+        tbody.innerHTML = `<tr><td colspan="6" class="empty-cell">${message}</td></tr>`;
         return;
     }
 
     tbody.innerHTML = dishes.map((dish) => {
-        const status = dish.is_available
+        const published = isDishPublished(dish);
+
+        const status = published
             ? `<span class="status-badge status-published">Опубликовано</span>`
-            : `<span class="status-badge status-hidden">Скрыто</span>`;
+            : `<span class="status-badge status-hidden">Не опубликовано</span>`;
 
         const recipe = dish.has_recipe
             ? `<span class="status-badge status-ok">Есть</span>`
             : `<span class="status-badge status-warning">Нет</span>`;
+
+        const menuType = dish.menu_type || "home";
 
         return `
             <tr>
                 <td>
                     <div class="dish-name">${escapeHtml(dish.emoji)} ${escapeHtml(dish.name)}</div>
                     <div class="muted small">${escapeHtml(dish.description)}</div>
+                    <span class="menu-type-badge menu-type-${escapeHtml(menuType)}">${escapeHtml(menuTypeLabel(menuType))}</span>
                 </td>
                 <td>${dish.weight_grams ? `${dish.weight_grams} г` : "—"}</td>
                 <td>${formatMoney(dish.price)}</td>
@@ -523,7 +578,7 @@ function renderDishesTable(dishes) {
                         Редактировать
                     </button>
                     <button class="action-button" data-action="toggle" data-id="${dish.id}">
-                        ${dish.is_available ? "Скрыть" : "Опубликовать"}
+                        ${published ? "Скрыть" : "Опубликовать"}
                     </button>
                     <button class="action-button action-danger" data-action="delete" data-id="${dish.id}">
                         Удалить
@@ -555,13 +610,15 @@ async function handleDishAction(event) {
 }
 
 async function toggleDish(dish) {
+    const published = isDishPublished(dish);
+
     try {
         await api(`/api/admin/dishes/${dish.id}`, {
             method: "PATCH",
-            body: JSON.stringify({ is_available: !dish.is_available })
+            body: JSON.stringify({ is_available: !published })
         });
 
-        toast(dish.is_available ? "Блюдо скрыто" : "Блюдо опубликовано", "success");
+        toast(published ? "Блюдо скрыто" : "Блюдо опубликовано", "success");
         await loadDishes();
     } catch (error) {
         toast(error.message, "error");
@@ -849,6 +906,13 @@ function renderDishForm(dish, recipe) {
     const isEditing = Boolean(dish);
     const rows = recipe.length > 0 ? recipe : [{ name: "", quantity: "", unit: "g" }];
     const currentEmoji = String(dish?.emoji || "").trim() || DEFAULT_DISH_EMOJI;
+    const currentMenuType = dish?.menu_type || "home";
+    const previousMenuType = ["home", "banquet", "both"].includes(dish?.previous_menu_type)
+        ? dish.previous_menu_type
+        : "";
+    const previousMenuHint = currentMenuType === "hidden" && previousMenuType
+        ? ` Прежнее меню: «${escapeHtml(menuTypeLabel(previousMenuType))}».`
+        : "";
     const existingPhotoURL = String(dish?.photo_url || "").trim();
     let selectedPhotoFile = null;
     let removeExistingPhoto = false;
@@ -878,6 +942,21 @@ function renderDishForm(dish, recipe) {
             <div class="form-field">
                 <label for="dish-price">Цена, ₽ *</label>
                 <input id="dish-price" name="price" type="number" min="0" step="1" required value="${dish?.price ?? ""}">
+            </div>
+
+            <div class="form-field form-field-wide">
+                <label for="dish-menu-type">Принадлежность к меню *</label>
+                <select id="dish-menu-type" name="menu_type">
+                    ${DISH_FILTERS.filter((filter) => filter.value !== "all").map((filter) => `
+                        <option value="${filter.value}" ${filter.value === currentMenuType ? "selected" : ""}>
+                            ${filter.label}
+                        </option>
+                    `).join("")}
+                </select>
+                <p class="hint">
+                    «Скрыто» автоматически снимает блюдо с публикации и убирает его из публичного каталога.
+                    Чтобы вернуть блюдо, выберите домашнее, банкетное или оба меню.${previousMenuHint}
+                </p>
             </div>
 
             <div class="form-field form-field-wide emoji-field" id="dish-emoji-field">
@@ -990,10 +1069,18 @@ function renderDishForm(dish, recipe) {
             const weightRaw = form.querySelector("#dish-weight").value.trim();
             const priceRaw = form.querySelector("#dish-price").value.trim();
             const emoji = form.querySelector("#dish-emoji").value.trim();
-            const isAvailable = form.querySelector("#dish-available").checked;
+            const menuType = form.querySelector("#dish-menu-type").value;
+            let isAvailable = form.querySelector("#dish-available").checked;
+
+            if (menuType === "hidden") {
+                isAvailable = false;
+            }
 
             if (!name) {
                 throw new Error("Укажите название блюда.");
+            }
+            if (!MENU_TYPE_LABELS[menuType]) {
+                throw new Error("Выберите принадлежность к меню.");
             }
             if (!description) {
                 throw new Error("Укажите описание блюда.");
@@ -1055,6 +1142,7 @@ function renderDishForm(dish, recipe) {
                 price,
                 emoji: emoji || DEFAULT_DISH_EMOJI,
                 is_available: isAvailable,
+                menu_type: menuType,
                 ingredients
             };
 
@@ -1112,6 +1200,32 @@ function renderDishForm(dish, recipe) {
     });
 
     setupEmojiPicker(overlay, currentEmoji);
+
+    const menuTypeSelect = overlay.querySelector("#dish-menu-type");
+    const availableCheckbox = overlay.querySelector("#dish-available");
+
+    function syncVisibilityControls() {
+        if (!menuTypeSelect || !availableCheckbox) {
+            return;
+        }
+
+        const hidden = menuTypeSelect.value === "hidden";
+        availableCheckbox.disabled = hidden;
+
+        if (hidden) {
+            availableCheckbox.checked = false;
+        }
+    }
+
+    if (menuTypeSelect && availableCheckbox) {
+        menuTypeSelect.addEventListener("change", () => {
+            if (menuTypeSelect.value !== "hidden") {
+                availableCheckbox.checked = true;
+            }
+            syncVisibilityControls();
+        });
+        syncVisibilityControls();
+    }
 
     const photoInput = overlay.querySelector("#dish-photo-input");
     const photoPreview = overlay.querySelector("#dish-photo-preview");
@@ -1251,8 +1365,22 @@ function renderDishForm(dish, recipe) {
 }
 
 async function renderDishesPage() {
+    const filterButtons = DISH_FILTERS.map((filter) => `
+        <button
+            type="button"
+            class="filter-button ${filter.value === state.dishesFilter ? "active" : ""}"
+            data-dish-filter="${filter.value}"
+            role="tab"
+            aria-selected="${filter.value === state.dishesFilter}"
+        >${filter.label}</button>
+    `).join("");
+
     pageContent.innerHTML = `
-        <div class="page-actions">
+        <div class="page-actions dishes-actions">
+            <div class="dish-filters" id="dish-filters" role="tablist" aria-label="Фильтр блюд по меню">
+                ${filterButtons}
+            </div>
+
             <button class="primary-button" id="add-dish-button">+ Добавить блюдо</button>
         </div>
 
@@ -1277,6 +1405,28 @@ async function renderDishesPage() {
 
     pageContent.querySelector("#add-dish-button").addEventListener("click", () => openDishForm(null));
     pageContent.querySelector("#dishes-list").addEventListener("click", handleDishAction);
+
+    pageContent.querySelector("#dish-filters").addEventListener("click", (event) => {
+        const button = event.target.closest("[data-dish-filter]");
+        if (!button) {
+            return;
+        }
+
+        const filter = button.dataset.dishFilter;
+        if (filter === state.dishesFilter) {
+            return;
+        }
+
+        state.dishesFilter = filter;
+
+        pageContent.querySelectorAll("[data-dish-filter]").forEach((filterButton) => {
+            const active = filterButton.dataset.dishFilter === filter;
+            filterButton.classList.toggle("active", active);
+            filterButton.setAttribute("aria-selected", String(active));
+        });
+
+        renderDishesTable();
+    });
 
     await loadDishes();
 }

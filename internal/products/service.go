@@ -40,7 +40,41 @@ func normalizeDishInput(input DishInput) (DishInput, error) {
 		return input, validationError("dish weight must be greater than zero")
 	}
 
+	if input.MenuType != nil {
+		menuType := strings.TrimSpace(*input.MenuType)
+		if menuType == "" {
+			// Пустое значение трактуем как «не указано»: при создании будет
+			// использовано значение по умолчанию, при редактировании — текущее.
+			input.MenuType = nil
+		} else {
+			if !isValidMenuType(menuType) {
+				return input, validationError("invalid menu type")
+			}
+			input.MenuType = &menuType
+		}
+	}
+
 	return input, nil
+}
+
+func isValidMenuType(menuType string) bool {
+	switch menuType {
+	case MenuTypeHome, MenuTypeBanquet, MenuTypeBoth, MenuTypeHidden:
+		return true
+	default:
+		return false
+	}
+}
+
+// previousMenuTypeOrHome returns a valid visible menu type to restore after a
+// dish has been hidden. Old hidden dishes may not have a saved previous value.
+func previousMenuTypeOrHome(menuType string) string {
+	switch menuType {
+	case MenuTypeHome, MenuTypeBanquet, MenuTypeBoth:
+		return menuType
+	default:
+		return DefaultMenuType
+	}
 }
 
 func validateUnit(unit string) error {
@@ -165,6 +199,8 @@ func scanDishRows(rows *sql.Rows) ([]Dish, error) {
 			&weight,
 			&dish.Price,
 			&available,
+			&dish.MenuType,
+			&dish.PreviousMenuType,
 			&hasRecipe,
 			&dish.Emoji,
 			&dish.PhotoURL,
@@ -205,6 +241,23 @@ func (s *Service) CreateDish(input DishInput) (int64, error) {
 		return 0, validationError("cannot publish a dish without ingredients")
 	}
 
+	menuType := DefaultMenuType
+	if input.MenuType != nil {
+		menuType = *input.MenuType
+	}
+
+	previousMenuType := menuType
+	if menuType == MenuTypeHidden {
+		previousMenuType = DefaultMenuType
+	}
+	if !isAvailable || menuType == MenuTypeHidden {
+		if menuType != MenuTypeHidden {
+			previousMenuType = menuType
+		}
+		menuType = MenuTypeHidden
+		isAvailable = false
+	}
+
 	tx, err := s.DB.Begin()
 	if err != nil {
 		return 0, fmt.Errorf("begin dish transaction: %w", err)
@@ -213,14 +266,17 @@ func (s *Service) CreateDish(input DishInput) (int64, error) {
 
 	result, err := tx.Exec(`
 		INSERT INTO dishes (
-			name, description, weight_grams, price, is_available, emoji
-		) VALUES (?, ?, ?, ?, ?, ?)
+			name, description, weight_grams, price, is_available, menu_type,
+			previous_menu_type, emoji
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`,
 		input.Name,
 		input.Description,
 		input.WeightGrams,
 		input.Price,
 		isAvailable,
+		menuType,
+		previousMenuType,
 		input.Emoji,
 	)
 	if err != nil {
@@ -258,6 +314,8 @@ func (s *Service) GetDishes() ([]Dish, error) {
 			weight_grams,
 			price,
 			is_available,
+			menu_type,
+			previous_menu_type,
 			EXISTS(
 				SELECT 1 FROM dish_ingredients di WHERE di.dish_id = dishes.id
 			) AS has_recipe,
@@ -274,7 +332,31 @@ func (s *Service) GetDishes() ([]Dish, error) {
 	return scanDishRows(rows)
 }
 
-func (s *Service) GetPublicDishes() ([]Dish, error) {
+// GetPublicDishes returns published dishes for the public catalog. An empty
+// menu means "all visible dishes", which keeps the pre-existing /api/dishes
+// behaviour. Explicit home/banquet requests include dishes shared by both menus.
+func (s *Service) GetPublicDishes(menu string) ([]Dish, error) {
+	menu = strings.TrimSpace(menu)
+
+	filter := ""
+	args := make([]any, 0, 2)
+
+	switch menu {
+	case "", "all":
+		// Все опубликованные блюда, кроме скрытых.
+	case MenuTypeHome:
+		filter = " AND menu_type IN (?, ?)"
+		args = append(args, MenuTypeHome, MenuTypeBoth)
+	case MenuTypeBanquet:
+		filter = " AND menu_type IN (?, ?)"
+		args = append(args, MenuTypeBanquet, MenuTypeBoth)
+	case MenuTypeHidden:
+		// Скрытые блюда не попадают в публичный каталог ни в каком меню.
+		filter = " AND 0"
+	default:
+		return nil, validationError("invalid menu type")
+	}
+
 	rows, err := s.DB.Query(`
 		SELECT
 			id,
@@ -283,6 +365,8 @@ func (s *Service) GetPublicDishes() ([]Dish, error) {
 			weight_grams,
 			price,
 			is_available,
+			menu_type,
+			previous_menu_type,
 			EXISTS(
 				SELECT 1 FROM dish_ingredients di WHERE di.dish_id = dishes.id
 			) AS has_recipe,
@@ -290,11 +374,12 @@ func (s *Service) GetPublicDishes() ([]Dish, error) {
 			photo_url
 		FROM dishes
 		WHERE is_available = 1
+		  AND menu_type <> 'hidden'
 		  AND EXISTS(
 			SELECT 1 FROM dish_ingredients di WHERE di.dish_id = dishes.id
-		  )
+		  )`+filter+`
 		ORDER BY id
-	`)
+	`, args...)
 	if err != nil {
 		return nil, fmt.Errorf("get public dishes: %w", err)
 	}
@@ -332,11 +417,12 @@ func (s *Service) UpdateDish(id int64, input DishInput) error {
 	defer tx.Rollback()
 
 	var currentAvailable int
+	var currentMenuType, currentPreviousMenuType string
 	err = tx.QueryRow(`
-		SELECT is_available
+		SELECT is_available, menu_type, previous_menu_type
 		FROM dishes
 		WHERE id = ?
-	`, id).Scan(&currentAvailable)
+	`, id).Scan(&currentAvailable, &currentMenuType, &currentPreviousMenuType)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrDishNotFound
 	}
@@ -373,6 +459,38 @@ func (s *Service) UpdateDish(id int64, input DishInput) error {
 	if input.IsAvailable != nil {
 		isAvailable = *input.IsAvailable
 	}
+
+	// Selecting a visible menu for a hidden dish is an explicit request to
+	// return it to the catalog, even if is_available was omitted.
+	if input.IsAvailable == nil && input.MenuType != nil &&
+		*input.MenuType != MenuTypeHidden && currentMenuType == MenuTypeHidden {
+		isAvailable = true
+	}
+
+	menuType := currentMenuType
+	if input.MenuType != nil {
+		menuType = *input.MenuType
+	}
+
+	previousMenuType := previousMenuTypeOrHome(currentPreviousMenuType)
+	if menuType != MenuTypeHidden {
+		previousMenuType = menuType
+	}
+
+	// Both ways of hiding a dish are kept in sync: "hidden" means the dish is
+	// unpublished, and unpublishing a dish moves it to the hidden menu.
+	if !isAvailable || menuType == MenuTypeHidden {
+		if currentMenuType != MenuTypeHidden {
+			if menuType != MenuTypeHidden {
+				previousMenuType = menuType
+			} else {
+				previousMenuType = previousMenuTypeOrHome(currentMenuType)
+			}
+		}
+		menuType = MenuTypeHidden
+		isAvailable = false
+	}
+
 	if isAvailable && recipeCount == 0 {
 		return validationError("cannot publish a dish without ingredients")
 	}
@@ -385,6 +503,8 @@ func (s *Service) UpdateDish(id int64, input DishInput) error {
 			weight_grams = ?,
 			price = ?,
 			is_available = ?,
+			menu_type = ?,
+			previous_menu_type = ?,
 			emoji = ?
 		WHERE id = ?
 	`,
@@ -393,6 +513,8 @@ func (s *Service) UpdateDish(id int64, input DishInput) error {
 		input.WeightGrams,
 		input.Price,
 		isAvailable,
+		menuType,
+		previousMenuType,
 		input.Emoji,
 		id,
 	)
@@ -422,8 +544,12 @@ func (s *Service) SetDishAvailability(id int64, available bool) error {
 	}
 	defer tx.Rollback()
 
-	var exists int
-	err = tx.QueryRow(`SELECT 1 FROM dishes WHERE id = ?`, id).Scan(&exists)
+	var currentMenuType, currentPreviousMenuType string
+	err = tx.QueryRow(`
+		SELECT menu_type, previous_menu_type
+		FROM dishes
+		WHERE id = ?
+	`, id).Scan(&currentMenuType, &currentPreviousMenuType)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrDishNotFound
 	}
@@ -431,7 +557,15 @@ func (s *Service) SetDishAvailability(id int64, available bool) error {
 		return fmt.Errorf("check dish: %w", err)
 	}
 
+	menuType := currentMenuType
+	previousMenuType := previousMenuTypeOrHome(currentPreviousMenuType)
+
 	if available {
+		if menuType == MenuTypeHidden {
+			menuType = previousMenuType
+		}
+		previousMenuType = menuType
+
 		count, err := countRecipe(tx, id)
 		if err != nil {
 			return fmt.Errorf("count recipe: %w", err)
@@ -439,13 +573,18 @@ func (s *Service) SetDishAvailability(id int64, available bool) error {
 		if count == 0 {
 			return validationError("cannot publish a dish without ingredients")
 		}
+	} else {
+		if menuType != MenuTypeHidden {
+			previousMenuType = menuType
+		}
+		menuType = MenuTypeHidden
 	}
 
 	if _, err := tx.Exec(`
 		UPDATE dishes
-		SET is_available = ?
+		SET is_available = ?, menu_type = ?, previous_menu_type = ?
 		WHERE id = ?
-	`, available, id); err != nil {
+	`, available, menuType, previousMenuType, id); err != nil {
 		return fmt.Errorf("update dish availability: %w", err)
 	}
 

@@ -14,6 +14,9 @@ func InitSchema(db *sql.DB) error {
 		weight_grams INTEGER CHECK(weight_grams > 0),
 		price INTEGER NOT NULL CHECK(price >= 0),
 		is_available INTEGER NOT NULL DEFAULT 1,
+		menu_type TEXT NOT NULL DEFAULT 'home'
+			CHECK(menu_type IN ('home', 'banquet', 'both', 'hidden')),
+		previous_menu_type TEXT NOT NULL DEFAULT '',
 		emoji TEXT NOT NULL DEFAULT '🍽️',
 		photo_url TEXT NOT NULL DEFAULT ''
 	);
@@ -89,6 +92,58 @@ func InitSchema(db *sql.DB) error {
 	}
 	if err := ensureColumn(db, "dishes", "photo_url", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return fmt.Errorf("add dishes.photo_url column: %w", err)
+	}
+	if err := ensureColumn(
+		db,
+		"dishes",
+		"menu_type",
+		"TEXT NOT NULL DEFAULT 'home' CHECK(menu_type IN ('home', 'banquet', 'both', 'hidden'))",
+	); err != nil {
+		return fmt.Errorf("add dishes.menu_type column: %w", err)
+	}
+	if err := ensureColumn(
+		db,
+		"dishes",
+		"previous_menu_type",
+		"TEXT NOT NULL DEFAULT ''",
+	); err != nil {
+		return fmt.Errorf("add dishes.previous_menu_type column: %w", err)
+	}
+
+	return syncDishVisibility(db)
+}
+
+// syncDishVisibility keeps the two historical hiding mechanisms consistent:
+// a hidden dish is never published, and an unpublished dish is always hidden.
+// previous_menu_type stores the menu the dish belonged to before it was hidden.
+func syncDishVisibility(db *sql.DB) error {
+	_, err := db.Exec(`
+		UPDATE dishes
+		SET previous_menu_type = menu_type
+		WHERE menu_type <> 'hidden'
+		  AND previous_menu_type NOT IN ('home', 'banquet', 'both');
+
+		UPDATE dishes
+		SET menu_type = 'hidden',
+		    previous_menu_type = CASE
+		        WHEN previous_menu_type IN ('home', 'banquet', 'both') THEN previous_menu_type
+		        WHEN menu_type IN ('home', 'banquet', 'both') THEN menu_type
+		        ELSE 'home'
+		    END
+		WHERE is_available = 0
+		  AND menu_type <> 'hidden';
+
+		UPDATE dishes
+		SET is_available = 0
+		WHERE menu_type = 'hidden';
+
+		UPDATE dishes
+		SET previous_menu_type = 'home'
+		WHERE menu_type = 'hidden'
+		  AND previous_menu_type NOT IN ('home', 'banquet', 'both');
+	`)
+	if err != nil {
+		return fmt.Errorf("sync dish visibility: %w", err)
 	}
 
 	return nil

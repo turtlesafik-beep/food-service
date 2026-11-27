@@ -130,7 +130,9 @@ func (h *Handler) GetDishes(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) GetPublicDishes(w http.ResponseWriter, r *http.Request) {
-	dishes, err := h.Service.GetPublicDishes()
+	menu := strings.TrimSpace(r.URL.Query().Get("menu"))
+
+	dishes, err := h.Service.GetPublicDishes(menu)
 	if err != nil {
 		writeProductError(w, err)
 		return
