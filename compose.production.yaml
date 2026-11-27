@@ -2,10 +2,29 @@
 # Запуск:
 #   docker compose -f docker-compose.yml -f compose.production.yaml up -d --build
 #
-# Порт 80 наследуется из основного compose-файла, здесь добавляется 443.
-# Монтирование default.conf с тем же target заменяет локальный конфиг.
-# На сервере nginx/default.local.conf не нужен.
+# Постоянные данные вынесены из Git-каталога в /opt/food-service-data:
+#   /opt/food-service-data/database -> /app/data          (orders.db, orders.db-wal, orders.db-shm)
+#   /opt/food-service-data/uploads  -> /app/uploads       (фотографии блюд в uploads/dishes)
+#
+# Локальный docker-compose.yml продолжает использовать ./data и не требует
+# создания /opt/food-service-data.
+#
+# Права доступа: контейнер приложения работает от UID/GID пользователя deploy
+# (по умолчанию 1000:1000). Если `id -u deploy` / `id -g deploy` отличаются,
+# задайте APP_UID и APP_GID в /opt/food-service/.env. Каталоги в
+# /opt/food-service-data должны принадлежать этому же пользователю.
 services:
+  app:
+    # Заменяет локальный bind-mount ./data из docker-compose.yml (совпадает target).
+    volumes:
+      - /opt/food-service-data/database:/app/data
+      - /opt/food-service-data/uploads:/app/uploads
+    # UPLOAD_DIR уже поддерживается приложением (cmd/server/main.go),
+    # поэтому пути в коде менять не нужно.
+    environment:
+      UPLOAD_DIR: /app/uploads/dishes
+    user: "${APP_UID:-1000}:${APP_GID:-1000}"
+
   nginx:
     ports:
       - "443:443"
