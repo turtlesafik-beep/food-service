@@ -922,6 +922,21 @@ body.modal-open {
     margin-right: 0;
 }
 
+/* Кнопки строки заказа переносятся внутри ячейки и не расширяют таблицу. */
+#orders-list .actions-cell {
+    white-space: normal;
+}
+
+.order-row-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.order-row-actions .action-button {
+    margin-right: 0;
+}
+
 .pagination {
     display: flex;
     justify-content: flex-end;

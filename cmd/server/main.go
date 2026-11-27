@@ -84,6 +84,7 @@ func main() {
 	http.HandleFunc("GET /api/admin/orders", adminAuth(orderHandler.GetOrders))
 
 	http.HandleFunc("GET /api/admin/orders/{id}", adminAuth(orderHandler.GetAdminOrder))
+	http.HandleFunc("DELETE /api/admin/orders/{id}", adminAuth(orderHandler.DeleteOrder))
 
 	http.HandleFunc("/api/admin/dishes/", adminAuth(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/recipe") {

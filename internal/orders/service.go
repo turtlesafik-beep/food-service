@@ -422,6 +422,56 @@ func (s *Service) GetOrders(limit, offset int, query string) ([]AdminOrder, erro
 	return orders, nil
 }
 
+func (s *Service) DeleteOrder(id int64) error {
+	tx, err := s.DB.Begin()
+	if err != nil {
+		return fmt.Errorf("begin order deletion transaction: %w", err)
+	}
+	defer tx.Rollback()
+
+	var exists int
+	err = tx.QueryRow(`SELECT 1 FROM orders WHERE id = ?`, id).Scan(&exists)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrOrderNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("check order: %w", err)
+	}
+
+	// Удаляем сначала зависимые записи: ингредиенты -> позиции -> заказ.
+	if _, err := tx.Exec(`
+		DELETE FROM order_ingredients
+		WHERE order_item_id IN (
+			SELECT id FROM order_items WHERE order_id = ?
+		)
+	`, id); err != nil {
+		return fmt.Errorf("delete order ingredients: %w", err)
+	}
+
+	if _, err := tx.Exec(`DELETE FROM order_items WHERE order_id = ?`, id); err != nil {
+		return fmt.Errorf("delete order items: %w", err)
+	}
+
+	result, err := tx.Exec(`DELETE FROM orders WHERE id = ?`, id)
+	if err != nil {
+		return fmt.Errorf("delete order: %w", err)
+	}
+
+	deleted, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("check deleted order: %w", err)
+	}
+	if deleted == 0 {
+		return ErrOrderNotFound
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit order deletion transaction: %w", err)
+	}
+
+	return nil
+}
+
 func (s *Service) GetAdminOrder(id int64) (AdminOrderResponse, error) {
 	var order AdminOrderResponse
 

@@ -2,6 +2,8 @@ package orders
 
 import (
 	"encoding/json"
+	"errors"
+	"log"
 	"net/http"
 	"strconv"
 )
@@ -83,6 +85,27 @@ func (h *Handler) GetOrders(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
 	json.NewEncoder(w).Encode(orders)
+}
+
+func (h *Handler) DeleteOrder(w http.ResponseWriter, r *http.Request) {
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil || id <= 0 {
+		http.Error(w, "Invalid order ID", http.StatusBadRequest)
+		return
+	}
+
+	if err := h.Service.DeleteOrder(id); err != nil {
+		if errors.Is(err, ErrOrderNotFound) {
+			http.Error(w, "Order not found", http.StatusNotFound)
+			return
+		}
+
+		log.Printf("orders API error: %v", err)
+		http.Error(w, "Failed to delete order", http.StatusInternalServerError)
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
 }
 
 func (h *Handler) GetAdminOrder(w http.ResponseWriter, r *http.Request) {

@@ -287,6 +287,9 @@ function humanizeError(message) {
         "dish not found": "Блюдо не найдено. Обновите список.",
         "ingredient not found": "Ингредиент не найден. Обновите список.",
         "Invalid JSON": "Некорректные данные формы.",
+        "Order not found": "Заказ не найден. Возможно, он уже был удалён.",
+        "Invalid order ID": "Некорректный идентификатор заказа.",
+        "Failed to delete order": "Не удалось удалить заказ. Попробуйте ещё раз.",
         "Unauthorized": "Требуется авторизация."
     };
 
@@ -1988,9 +1991,14 @@ function renderOrdersTable(orders) {
                 <td>${formatMoney(order.total)}</td>
                 <td class="order-link-cell">${linkCell}</td>
                 <td class="actions-cell">
-                    <button class="action-button" data-action="details" data-id="${order.order_id}">
-                        Подробнее
-                    </button>
+                    <div class="order-row-actions">
+                        <button class="action-button" data-action="details" data-id="${order.order_id}">
+                            Подробнее
+                        </button>
+                        <button class="action-button action-danger" data-action="delete" data-id="${order.order_id}">
+                            Удалить
+                        </button>
+                    </div>
                 </td>
             </tr>
         `;
@@ -2126,6 +2134,27 @@ async function openOrderDetails(orderId) {
     }
 }
 
+async function deleteOrder(orderId, button) {
+    const confirmed = window.confirm(
+        "Вы действительно хотите удалить этот заказ? Это действие нельзя отменить"
+    );
+
+    if (!confirmed) {
+        return;
+    }
+
+    button.disabled = true;
+
+    try {
+        await api(`/api/admin/orders/${orderId}`, { method: "DELETE" });
+        toast(`Заказ #${orderId} удалён`, "success");
+        await loadOrders();
+    } catch (error) {
+        toast(error.message, "error");
+        button.disabled = false;
+    }
+}
+
 async function handleOrderAction(event) {
     const button = event.target.closest("button[data-action]");
     if (!button) {
@@ -2134,6 +2163,8 @@ async function handleOrderAction(event) {
 
     if (button.dataset.action === "details") {
         await openOrderDetails(Number(button.dataset.id));
+    } else if (button.dataset.action === "delete") {
+        await deleteOrder(Number(button.dataset.id), button);
     }
 }
 
