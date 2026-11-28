@@ -23,6 +23,9 @@ services:
     # поэтому пути в коде менять не нужно.
     environment:
       UPLOAD_DIR: /app/uploads/dishes
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_ALLOWED_USER_IDS: ${TELEGRAM_ALLOWED_USER_IDS:-}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
     user: "${APP_UID:-1000}:${APP_GID:-1000}"
 
   nginx:

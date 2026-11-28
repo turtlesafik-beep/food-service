@@ -87,6 +87,21 @@ func InitSchema(db *sql.DB) error {
 		FOREIGN KEY (order_item_id) REFERENCES order_items(id)
 	);
 
+	CREATE TABLE IF NOT EXISTS notification_outbox (
+		id INTEGER PRIMARY KEY,
+		order_id INTEGER NOT NULL,
+		recipient_id INTEGER NOT NULL,
+		status TEXT NOT NULL DEFAULT 'pending'
+			CHECK (status IN ('pending', 'sent', 'failed')),
+		attempts INTEGER NOT NULL DEFAULT 0,
+		next_attempt_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		last_error TEXT NOT NULL DEFAULT '',
+		created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+		sent_at TEXT,
+		FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
+		UNIQUE(order_id, recipient_id)
+	);
+
 	CREATE INDEX IF NOT EXISTS idx_dish_ingredients_dish_id
 		ON dish_ingredients(dish_id);
 	CREATE INDEX IF NOT EXISTS idx_dish_ingredients_ingredient_id
@@ -95,6 +110,8 @@ func InitSchema(db *sql.DB) error {
 		ON order_items(order_id);
 	CREATE INDEX IF NOT EXISTS idx_order_ingredients_order_item_id
 		ON order_ingredients(order_item_id);
+	CREATE INDEX IF NOT EXISTS idx_notification_outbox_due
+		ON notification_outbox(status, next_attempt_at);
 	CREATE INDEX IF NOT EXISTS idx_orders_customer_phone
 		ON orders(customer_phone);
 	CREATE INDEX IF NOT EXISTS idx_categories_menu_type

@@ -10,8 +10,14 @@ import (
 	"strings"
 )
 
+type Notifications interface {
+	EnqueueInTx(tx *sql.Tx, orderID int64) error
+	Wake()
+}
+
 type Service struct {
-	DB *sql.DB
+	DB            *sql.DB
+	Notifications Notifications
 }
 
 func generateToken() (string, string, error) {
@@ -218,8 +224,18 @@ func (s *Service) CreateOrder(request CreateOrderRequest) (CreateOrderResult, er
 
 	}
 
+	if s.Notifications != nil {
+		if err := s.Notifications.EnqueueInTx(tx, orderID); err != nil {
+			return CreateOrderResult{}, fmt.Errorf("enqueue order notifications: %w", err)
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return CreateOrderResult{}, fmt.Errorf("commit order transaction: %w", err)
+	}
+
+	if s.Notifications != nil {
+		s.Notifications.Wake()
 	}
 
 	return CreateOrderResult{
@@ -490,7 +506,7 @@ func (s *Service) GetAdminOrder(id int64) (AdminOrderResponse, error) {
 
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return AdminOrderResponse{}, fmt.Errorf("order not found")
+			return AdminOrderResponse{}, ErrOrderNotFound
 		}
 		return AdminOrderResponse{}, fmt.Errorf("get order: %w", err)
 	}

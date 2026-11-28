@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"strings"
 
 	"food-service/internal/database"
+	"food-service/internal/notifications"
 	"food-service/internal/orders"
 	"food-service/internal/products"
 )
@@ -43,6 +45,14 @@ func main() {
 
 	orderService := &orders.Service{
 		DB: db,
+	}
+
+	if telegramConfig, err := notifications.LoadConfig(); err != nil {
+		log.Printf("WARNING: Telegram notifications disabled: %v", err)
+	} else {
+		notifier := notifications.NewNotifier(db, orderService, telegramConfig)
+		orderService.Notifications = notifier
+		go notifier.Run(context.Background())
 	}
 
 	orderHandler := &orders.Handler{
