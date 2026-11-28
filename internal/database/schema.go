@@ -5,6 +5,11 @@ import (
 	"fmt"
 )
 
+// SchemaVersion is stored in PRAGMA user_version. Backup archives carry the
+// same value and the table/column fingerprint, so an archive can only be
+// restored into a compatible application schema.
+const SchemaVersion = 1
+
 func InitSchema(db *sql.DB) error {
 	query := `
 	CREATE TABLE IF NOT EXISTS dishes (
@@ -91,6 +96,10 @@ func InitSchema(db *sql.DB) error {
 		id INTEGER PRIMARY KEY,
 		order_id INTEGER NOT NULL,
 		recipient_id INTEGER NOT NULL,
+		-- Immutable identity of this exact delivery attempt. A numeric id may
+		-- be reused by SQLite after a row is deleted, so completion updates
+		-- must match both id and job_token.
+		job_token TEXT NOT NULL DEFAULT '',
 		status TEXT NOT NULL DEFAULT 'pending'
 			CHECK (status IN ('pending', 'sent', 'failed')),
 		attempts INTEGER NOT NULL DEFAULT 0,
@@ -100,6 +109,16 @@ func InitSchema(db *sql.DB) error {
 		sent_at TEXT,
 		FOREIGN KEY (order_id) REFERENCES orders(id) ON DELETE CASCADE,
 		UNIQUE(order_id, recipient_id)
+	);
+
+	-- Service table. The ID of the last successfully applied restore is written
+	-- in the same SQLite transaction as the restored data. It is the source of
+	-- truth for crash recovery when the process dies between the SQLite COMMIT
+	-- and filesystem journal cleanup.
+	CREATE TABLE IF NOT EXISTS restore_state (
+		id INTEGER PRIMARY KEY CHECK (id = 1),
+		restore_id TEXT NOT NULL,
+		applied_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
 	);
 
 	CREATE INDEX IF NOT EXISTS idx_dish_ingredients_dish_id
@@ -150,8 +169,44 @@ func InitSchema(db *sql.DB) error {
 	); err != nil {
 		return fmt.Errorf("add dishes.previous_menu_type column: %w", err)
 	}
+	if err := ensureColumn(
+		db,
+		"notification_outbox",
+		"job_token",
+		"TEXT NOT NULL DEFAULT ''",
+	); err != nil {
+		return fmt.Errorf("add notification_outbox.job_token column: %w", err)
+	}
 
-	return syncDishVisibility(db)
+	// Backfill rows created before job_token existed. The trigger gives every
+	// future row a non-empty identity even when it is inserted without an
+	// explicit token (for example from a migration or a test fixture).
+	if _, err := db.Exec(`
+		UPDATE notification_outbox
+		SET job_token = lower(hex(randomblob(16)))
+		WHERE job_token = '';
+
+		CREATE TRIGGER IF NOT EXISTS trg_notification_outbox_job_token
+		AFTER INSERT ON notification_outbox
+		WHEN NEW.job_token = ''
+		BEGIN
+			UPDATE notification_outbox
+			SET job_token = lower(hex(randomblob(16)))
+			WHERE id = NEW.id;
+		END;
+	`); err != nil {
+		return fmt.Errorf("initialize notification job identity: %w", err)
+	}
+
+	if err := syncDishVisibility(db); err != nil {
+		return err
+	}
+
+	if _, err := db.Exec(fmt.Sprintf("PRAGMA user_version = %d", SchemaVersion)); err != nil {
+		return fmt.Errorf("set schema version: %w", err)
+	}
+
+	return nil
 }
 
 // syncDishVisibility keeps the two historical hiding mechanisms consistent:

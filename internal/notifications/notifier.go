@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"food-service/internal/maintenance"
 	"food-service/internal/orders"
 )
 
@@ -95,6 +96,14 @@ type Notifier struct {
 	wake          chan struct{}
 	interval      time.Duration
 	now           func() time.Time
+	gate          *maintenance.Gate
+}
+
+// SetGate lets the notifier pause before starting new delivery work while a
+// backup snapshot or restore is running. It never holds the gate during a
+// network request.
+func (n *Notifier) SetGate(gate *maintenance.Gate) {
+	n.gate = gate
 }
 
 func NewNotifier(db *sql.DB, orderService *orders.Service, config Config) *Notifier {
@@ -116,7 +125,8 @@ func NewNotifier(db *sql.DB, orderService *orders.Service, config Config) *Notif
 func (n *Notifier) EnqueueInTx(tx *sql.Tx, orderID int64) error {
 	for _, recipientID := range n.recipients {
 		if _, err := tx.Exec(
-			`INSERT INTO notification_outbox (order_id, recipient_id) VALUES (?, ?)`,
+			`INSERT INTO notification_outbox (order_id, recipient_id, job_token)
+			 VALUES (?, ?, lower(hex(randomblob(16))))`,
 			orderID,
 			recipientID,
 		); err != nil {
@@ -171,15 +181,67 @@ func (n *Notifier) checkBot(ctx context.Context) {
 	}
 }
 
+var errMaintenance = errors.New("maintenance in progress")
+
+// enterRead protects one SQLite access. It must not be held across a
+// SendMessage call: restore must be able to acquire the exclusive gate while
+// the notifier waits for Telegram. If maintenance is already active, the
+// caller leaves the job pending for the next cycle.
+func (n *Notifier) enterRead() bool {
+	return n.gate == nil || n.gate.TryRead()
+}
+
+func (n *Notifier) leaveRead() {
+	if n.gate != nil {
+		n.gate.ReadUnlock()
+	}
+}
+
+func (n *Notifier) loadOrder(ctx context.Context, orderID int64) (orders.AdminOrderResponse, bool, error) {
+	if !n.enterRead() {
+		return orders.AdminOrderResponse{}, false, errMaintenance
+	}
+	defer n.leaveRead()
+
+	order, err := n.orders.GetAdminOrder(orderID)
+	return order, true, err
+}
+
+func (n *Notifier) deleteOutboxForOrder(ctx context.Context, orderID int64) bool {
+	if !n.enterRead() {
+		return false
+	}
+	defer n.leaveRead()
+
+	if _, err := n.db.ExecContext(
+		ctx,
+		`DELETE FROM notification_outbox WHERE order_id = ?`,
+		orderID,
+	); err != nil {
+		n.logger.Printf("telegram: delete outbox rows for order #%d: %v", orderID, err)
+	}
+	return true
+}
+
 func (n *Notifier) process(ctx context.Context) {
+	if n.gate != nil && n.gate.Active() {
+		return
+	}
+
 	processed := make(map[int64]struct{})
 
 	for {
 		if ctx.Err() != nil {
 			return
 		}
+		if n.gate != nil && n.gate.Active() {
+			return
+		}
 
 		jobs, err := n.fetchDue(ctx, outboxBatchSize)
+		if errors.Is(err, errMaintenance) {
+			return
+		}
 		if err != nil {
 			n.logger.Printf("telegram: fetch outbox: %v", err)
 			return
@@ -210,14 +272,20 @@ func (n *Notifier) process(ctx context.Context) {
 
 type outboxJob struct {
 	ID          int64
+	JobToken    string
 	OrderID     int64
 	RecipientID int64
 	Attempts    int
 }
 
 func (n *Notifier) fetchDue(ctx context.Context, limit int) ([]outboxJob, error) {
+	if !n.enterRead() {
+		return nil, errMaintenance
+	}
+	defer n.leaveRead()
+
 	rows, err := n.db.QueryContext(ctx, `
-		SELECT id, order_id, recipient_id, attempts
+		SELECT id, job_token, order_id, recipient_id, attempts
 		FROM notification_outbox
 		WHERE status = 'pending' AND next_attempt_at <= ?
 		ORDER BY next_attempt_at, id
@@ -231,7 +299,13 @@ func (n *Notifier) fetchDue(ctx context.Context, limit int) ([]outboxJob, error)
 	jobs := make([]outboxJob, 0, limit)
 	for rows.Next() {
 		var job outboxJob
-		if err := rows.Scan(&job.ID, &job.OrderID, &job.RecipientID, &job.Attempts); err != nil {
+		if err := rows.Scan(
+			&job.ID,
+			&job.JobToken,
+			&job.OrderID,
+			&job.RecipientID,
+			&job.Attempts,
+		); err != nil {
 			return nil, err
 		}
 		jobs = append(jobs, job)
@@ -253,10 +327,17 @@ func (n *Notifier) deliver(ctx context.Context, jobs []outboxJob) {
 		if ctx.Err() != nil {
 			return
 		}
+		if n.gate != nil && n.gate.Active() {
+			return
+		}
 
 		order, ok := cache[job.OrderID]
 		if !ok {
-			adminOrder, err := n.orders.GetAdminOrder(job.OrderID)
+			adminOrder, entered, err := n.loadOrder(ctx, job.OrderID)
+			if !entered {
+				return
+			}
+
 			switch {
 			case err == nil:
 				order = cachedOrder{parts: BuildOrderMessages(adminOrder, n.publicBaseURL)}
@@ -265,12 +346,8 @@ func (n *Notifier) deliver(ctx context.Context, jobs []outboxJob) {
 					"telegram: order #%d was deleted before notification; dropping pending tasks",
 					job.OrderID,
 				)
-				if _, deleteErr := n.db.ExecContext(
-					ctx,
-					`DELETE FROM notification_outbox WHERE order_id = ?`,
-					job.OrderID,
-				); deleteErr != nil {
-					n.logger.Printf("telegram: delete outbox rows for order #%d: %v", job.OrderID, deleteErr)
+				if !n.deleteOutboxForOrder(ctx, job.OrderID) {
+					return
 				}
 				order = cachedOrder{deleted: true}
 			default:
@@ -295,6 +372,9 @@ func (n *Notifier) deliver(ctx context.Context, jobs []outboxJob) {
 func (n *Notifier) deliverJob(ctx context.Context, job outboxJob, parts []string) {
 	for _, part := range parts {
 		if ctx.Err() != nil {
+			return
+		}
+		if n.gate != nil && n.gate.Active() {
 			return
 		}
 
@@ -337,13 +417,36 @@ func (n *Notifier) deliverJob(ctx context.Context, job outboxJob, parts []string
 }
 
 func (n *Notifier) markSent(ctx context.Context, job outboxJob) {
-	_, err := n.db.ExecContext(ctx, `
+	if job.JobToken == "" {
+		n.logger.Printf("telegram: notification %d has no job identity; ignoring stale success", job.ID)
+		return
+	}
+	if !n.enterRead() {
+		return
+	}
+	defer n.leaveRead()
+
+	result, err := n.db.ExecContext(ctx, `
 		UPDATE notification_outbox
 		SET status = 'sent', attempts = attempts + 1, sent_at = CURRENT_TIMESTAMP, last_error = ''
-		WHERE id = ?
-	`, job.ID)
+		WHERE id = ? AND job_token = ?
+	`, job.ID, job.JobToken)
 	if err != nil {
 		n.logger.Printf("telegram: mark notification %d as sent: %v", job.ID, err)
+		return
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		n.logger.Printf("telegram: check mark notification %d as sent: %v", job.ID, err)
+		return
+	}
+	if affected == 0 {
+		n.logger.Printf(
+			"telegram: notification %d no longer matches job %s; ignoring stale success",
+			job.ID,
+			job.JobToken,
+		)
 	}
 }
 
@@ -354,6 +457,15 @@ func (n *Notifier) recordFailure(
 	permanent bool,
 	retryAfter time.Duration,
 ) {
+	if job.JobToken == "" {
+		n.logger.Printf("telegram: notification %d has no job identity; ignoring stale failure", job.ID)
+		return
+	}
+	if !n.enterRead() {
+		return
+	}
+	defer n.leaveRead()
+
 	status := "pending"
 	delay := retryAfter
 
@@ -370,16 +482,31 @@ func (n *Notifier) recordFailure(
 	nextAttempt := n.now().Add(delay).UTC().Format(sqliteTimeLayout)
 	attempt := job.Attempts + 1
 
-	_, err := n.db.ExecContext(ctx, `
+	result, err := n.db.ExecContext(ctx, `
 		UPDATE notification_outbox
 		SET attempts = attempts + 1,
 		    status = ?,
 		    last_error = ?,
 		    next_attempt_at = ?
-		WHERE id = ?
-	`, status, truncate(sendErr.Error(), 500), nextAttempt, job.ID)
+		WHERE id = ? AND job_token = ?
+	`, status, truncate(sendErr.Error(), 500), nextAttempt, job.ID, job.JobToken)
 	if err != nil {
 		n.logger.Printf("telegram: record failed attempt for notification %d: %v", job.ID, err)
+		return
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		n.logger.Printf("telegram: check failed attempt for notification %d: %v", job.ID, err)
+		return
+	}
+	if affected == 0 {
+		n.logger.Printf(
+			"telegram: notification %d no longer matches job %s; ignoring stale failure",
+			job.ID,
+			job.JobToken,
+		)
+		return
 	}
 
 	if permanent {

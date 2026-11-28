@@ -199,6 +199,12 @@ const state = {
         offset: 0,
         limit: 20,
         q: ""
+    },
+    backups: {
+        restore: null,
+        safety: null,
+        safetyConfirmed: false,
+        applying: false
     }
 };
 
@@ -375,6 +381,86 @@ async function api(path, options = {}) {
 
     const text = await response.text();
     return text ? JSON.parse(text) : null;
+}
+
+function formatBytes(value) {
+    const bytes = Number(value) || 0;
+    if (bytes < 1024) {
+        return `${bytes} Б`;
+    }
+
+    const units = ["КБ", "МБ", "ГБ"];
+    let size = bytes / 1024;
+    let unit = units[0];
+
+    for (let i = 1; i < units.length && size >= 1024; i += 1) {
+        size /= 1024;
+        unit = units[i];
+    }
+
+    return `${size.toLocaleString("ru-RU", { maximumFractionDigits: 1 })} ${unit}`;
+}
+
+function backupFilename(isoDate) {
+    const date = isoDate ? new Date(isoDate) : new Date();
+    const value = Number.isNaN(date.getTime()) ? new Date() : date;
+    const stamp = value.toISOString().replace(/[-:]/g, "").replace(/\.\d{3}Z$/, "Z");
+    return `food-service-backup-${stamp}.zip`;
+}
+
+function startBackupDownload(sessionId, isoDate) {
+    const link = document.createElement("a");
+    link.href = `/api/admin/backups/${encodeURIComponent(sessionId)}/download`;
+    link.download = backupFilename(isoDate);
+    link.style.display = "none";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+}
+
+function uploadRestoreArchive(file, onProgress) {
+    return new Promise((resolve, reject) => {
+        const request = new XMLHttpRequest();
+        request.open("POST", "/api/admin/restores/validate");
+        request.responseType = "text";
+        request.setRequestHeader("Content-Type", "application/zip");
+
+        request.upload.addEventListener("progress", (event) => {
+            if (event.lengthComputable && typeof onProgress === "function") {
+                onProgress(Math.round((event.loaded / event.total) * 100));
+            }
+        });
+
+        request.addEventListener("load", () => {
+            let payload = null;
+            const text = (request.responseText || "").trim();
+            if (text) {
+                try {
+                    payload = JSON.parse(text);
+                } catch (error) {
+                    payload = null;
+                }
+            }
+
+            if (request.status >= 200 && request.status < 300 && payload) {
+                resolve(payload);
+                return;
+            }
+
+            if (request.status === 401) {
+                reject(new Error("Требуется авторизация. Обновите страницу и введите логин и пароль."));
+                return;
+            }
+
+            reject(new Error(text || `Ошибка проверки архива (${request.status}).`));
+        });
+
+        request.addEventListener("error", () => {
+            reject(new Error("Не удалось загрузить архив на сервер."));
+        });
+
+        request.send(file);
+    });
 }
 
 function toast(message, type = "info") {
@@ -2285,6 +2371,328 @@ async function renderOrdersPage() {
     await loadOrders();
 }
 
+function restoreSummaryHtml(summary) {
+    const counts = summary.counts || {};
+    const items = [
+        ["Заказы", counts.orders || 0],
+        ["Позиции заказов", counts.order_items || 0],
+        ["Блюда", counts.dishes || 0],
+        ["Категории", counts.categories || 0],
+        ["Ингредиенты", counts.ingredients || 0],
+        ["Фотографии", summary.photo_count || counts.photos || 0]
+    ];
+
+    return `
+        <div class="backup-summary-grid">
+            ${items.map(([label, value]) => `
+                <div class="backup-summary-item">
+                    <span class="backup-summary-label">${escapeHtml(label)}</span>
+                    <strong>${Number(value).toLocaleString("ru-RU")}</strong>
+                </div>
+            `).join("")}
+        </div>
+        <div class="backup-summary-details">
+            <div><span>Дата создания</span><strong>${escapeHtml(formatDate(summary.created_at))}</strong></div>
+            <div><span>Размер архива</span><strong>${formatBytes(summary.archive_size)}</strong></div>
+            <div><span>Размер базы</span><strong>${formatBytes(summary.database_size)}</strong></div>
+            <div><span>Версия схемы</span><strong>${escapeHtml(String(summary.schema_version || "—"))}</strong></div>
+        </div>
+    `;
+}
+
+async function renderBackupsPage() {
+    const backupState = state.backups;
+
+    pageContent.innerHTML = `
+        <div class="backup-page">
+            <section class="backup-card">
+                <div>
+                    <h2>Скачать резервную копию</h2>
+                    <p class="backup-description">
+                        ZIP содержит все заказы и связанные данные, блюда, категории, ингредиенты
+                        и загруженные фотографии. Служебная очередь Telegram-уведомлений,
+                        пароли и настройки сервера в архив не попадают.
+                    </p>
+                </div>
+                <div class="backup-actions">
+                    <button class="primary-button" id="download-backup-button" type="button">
+                        Скачать резервную копию
+                    </button>
+                </div>
+            </section>
+
+            <section class="backup-card backup-restore-card">
+                <div>
+                    <h2>Восстановить из копии</h2>
+                    <p class="backup-description">
+                        Загрузите ZIP, созданный этой админ-панелью. Перед применением сервер
+                        проверит структуру архива, SQLite, внешние ключи и наличие всех фотографий.
+                    </p>
+                </div>
+
+                <div class="backup-upload-row">
+                    <input type="file" id="restore-file" accept=".zip,application/zip">
+                    <button class="secondary-button" id="validate-restore-button" type="button" disabled>
+                        Проверить архив
+                    </button>
+                </div>
+                <div class="backup-progress" id="restore-progress" hidden>
+                    <div class="backup-progress-bar" id="restore-progress-bar"></div>
+                    <span id="restore-progress-text">Загрузка архива…</span>
+                </div>
+
+                <div class="backup-summary" id="restore-summary" hidden></div>
+
+                <div class="backup-confirm" id="restore-confirm" hidden>
+                    <div class="backup-danger-warning">
+                        <strong>Внимание: полная замена данных.</strong>
+                        Текущие заказы, блюда, категории, ингредиенты и фотографии будут
+                        заменены содержимым архива. Это действие нельзя отменить без
+                        страховочной копии.
+                    </div>
+
+                    <div class="backup-step">
+                        <h3>1. Скачайте текущую страховочную копию</h3>
+                        <p class="hint">
+                            Скачайте ZIP с текущими данными и сохраните его на компьютере.
+                            Только после этого восстановление будет разрешено.
+                        </p>
+                        <button class="secondary-button" id="download-safety-button" type="button">
+                            Скачать текущую копию
+                        </button>
+                        <p class="backup-safety-status" id="safety-status"></p>
+                        <label class="backup-checkbox">
+                            <input type="checkbox" id="confirm-safety-checkbox">
+                            <span>Я скачал(а) и сохранил(а) страховочную копию</span>
+                        </label>
+                    </div>
+
+                    <div class="backup-step">
+                        <h3>2. Подтвердите замену данных</h3>
+                        <p class="hint">Введите точную фразу: <code>ЗАМЕНИТЬ ДАННЫЕ</code></p>
+                        <input
+                            type="text"
+                            id="restore-phrase"
+                            class="backup-phrase-input"
+                            autocomplete="off"
+                            spellcheck="false"
+                            placeholder="ЗАМЕНИТЬ ДАННЫЕ"
+                        >
+                        <button class="primary-button backup-apply-button" id="apply-restore-button" type="button" disabled>
+                            Восстановить данные
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </div>
+    `;
+
+    const fileInput = pageContent.querySelector("#restore-file");
+    const validateButton = pageContent.querySelector("#validate-restore-button");
+    const progress = pageContent.querySelector("#restore-progress");
+    const progressBar = pageContent.querySelector("#restore-progress-bar");
+    const progressText = pageContent.querySelector("#restore-progress-text");
+    const summaryBox = pageContent.querySelector("#restore-summary");
+    const confirmBox = pageContent.querySelector("#restore-confirm");
+    const safetyButton = pageContent.querySelector("#download-safety-button");
+    const safetyStatus = pageContent.querySelector("#safety-status");
+    const safetyCheckbox = pageContent.querySelector("#confirm-safety-checkbox");
+    const phraseInput = pageContent.querySelector("#restore-phrase");
+    const applyButton = pageContent.querySelector("#apply-restore-button");
+
+    const updateApplyState = () => {
+        const phraseMatches = phraseInput.value === "ЗАМЕНИТЬ ДАННЫЕ";
+        applyButton.disabled = backupState.applying
+            || !backupState.safetyConfirmed
+            || !phraseMatches;
+
+        if (backupState.applying) {
+            applyButton.textContent = "Восстановление…";
+        } else {
+            applyButton.textContent = "Восстановить данные";
+        }
+        safetyButton.disabled = backupState.applying;
+    };
+
+    const showSummary = () => {
+        if (!backupState.restore) {
+            summaryBox.hidden = true;
+            confirmBox.hidden = true;
+            updateApplyState();
+            return;
+        }
+
+        summaryBox.hidden = false;
+        summaryBox.innerHTML = restoreSummaryHtml(backupState.restore);
+        confirmBox.hidden = false;
+
+        if (backupState.safety) {
+            safetyStatus.textContent = `Страховочная копия создана: ${formatDate(backupState.safety.created_at)}`;
+        } else {
+            safetyStatus.textContent = "";
+        }
+        safetyCheckbox.checked = backupState.safetyConfirmed;
+        safetyCheckbox.disabled = !backupState.safety || backupState.applying;
+        phraseInput.disabled = backupState.applying;
+        updateApplyState();
+    };
+
+    fileInput.addEventListener("change", () => {
+        validateButton.disabled = !fileInput.files || fileInput.files.length === 0;
+        backupState.restore = null;
+        backupState.safety = null;
+        backupState.safetyConfirmed = false;
+        showSummary();
+    });
+
+    pageContent.querySelector("#download-backup-button").addEventListener("click", async (event) => {
+        const button = event.currentTarget;
+        button.disabled = true;
+        try {
+            const info = await api("/api/admin/backups", { method: "POST" });
+            startBackupDownload(info.id, info.created_at);
+            toast("Скачивание резервной копии началось.", "success");
+        } catch (error) {
+            toast(error.message, "error");
+        } finally {
+            button.disabled = false;
+        }
+    });
+
+    validateButton.addEventListener("click", async () => {
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) {
+            toast("Выберите ZIP-файл.", "error");
+            return;
+        }
+
+        backupState.restore = null;
+        backupState.safety = null;
+        backupState.safetyConfirmed = false;
+        showSummary();
+
+        validateButton.disabled = true;
+        progress.hidden = false;
+        progressBar.style.width = "0%";
+        progressText.textContent = "Загрузка архива…";
+
+        try {
+            const summary = await uploadRestoreArchive(file, (percent) => {
+                progressBar.style.width = `${percent}%`;
+                progressText.textContent = `Загрузка архива… ${percent}%`;
+            });
+            backupState.restore = summary;
+            progressBar.style.width = "100%";
+            progressText.textContent = "Архив проверен.";
+            showSummary();
+            toast("Архив проверен. Можно переходить к восстановлению.", "success");
+        } catch (error) {
+            progressText.textContent = "Проверка не удалась.";
+            toast(error.message, "error");
+        } finally {
+            progress.hidden = true;
+            validateButton.disabled = false;
+        }
+    });
+
+    safetyButton.addEventListener("click", async () => {
+        if (!backupState.restore) {
+            return;
+        }
+
+        safetyButton.disabled = true;
+        backupState.safetyConfirmed = false;
+        safetyCheckbox.checked = false;
+        try {
+            const info = await api("/api/admin/backups", { method: "POST" });
+            backupState.safety = info;
+            startBackupDownload(info.id, info.created_at);
+            safetyStatus.textContent = "Дождитесь завершения скачивания, затем подтвердите сохранение копии.";
+            safetyCheckbox.disabled = false;
+            updateApplyState();
+        } catch (error) {
+            toast(error.message, "error");
+        } finally {
+            safetyButton.disabled = false;
+        }
+    });
+
+    safetyCheckbox.addEventListener("change", async () => {
+        if (!safetyCheckbox.checked) {
+            backupState.safetyConfirmed = false;
+            updateApplyState();
+            return;
+        }
+        if (!backupState.safety) {
+            safetyCheckbox.checked = false;
+            return;
+        }
+
+        safetyCheckbox.disabled = true;
+        try {
+            await api(`/api/admin/backups/${encodeURIComponent(backupState.safety.id)}/confirm`, {
+                method: "POST"
+            });
+            backupState.safetyConfirmed = true;
+            safetyStatus.textContent = `Страховочная копия подтверждена: ${formatDate(backupState.safety.created_at)}`;
+            toast("Сохранение страховочной копии подтверждено.", "success");
+        } catch (error) {
+            safetyCheckbox.checked = false;
+            backupState.safetyConfirmed = false;
+            toast(error.message, "error");
+        } finally {
+            safetyCheckbox.disabled = false;
+            updateApplyState();
+        }
+    });
+
+    phraseInput.addEventListener("input", updateApplyState);
+
+    applyButton.addEventListener("click", async () => {
+        if (!backupState.restore || !backupState.safety || !backupState.safetyConfirmed) {
+            return;
+        }
+        if (phraseInput.value !== "ЗАМЕНИТЬ ДАННЫЕ") {
+            toast("Введите точную фразу: ЗАМЕНИТЬ ДАННЫЕ", "error");
+            return;
+        }
+
+        const confirmed = window.confirm(
+            "Заменить все текущие данные содержимым архива? Это действие изменяет заказы, блюда и фотографии."
+        );
+        if (!confirmed) {
+            return;
+        }
+
+        backupState.applying = true;
+        updateApplyState();
+        try {
+            const result = await api(`/api/admin/restores/${encodeURIComponent(backupState.restore.restore_id)}/apply`, {
+                method: "POST",
+                body: JSON.stringify({
+                    confirmation: phraseInput.value,
+                    safety_backup_id: backupState.safety.id
+                })
+            });
+            toast(result.message || "Данные успешно восстановлены.", "success");
+            state.backups = {
+                restore: null,
+                safety: null,
+                safetyConfirmed: false,
+                applying: false
+            };
+            await renderBackupsPage();
+        } catch (error) {
+            toast(error.message, "error");
+        } finally {
+            backupState.applying = false;
+            updateApplyState();
+        }
+    });
+
+    showSummary();
+}
+
 const pages = {
     dishes: {
         title: "Блюда",
@@ -2301,6 +2709,10 @@ const pages = {
     orders: {
         title: "Заказы",
         render: renderOrdersPage
+    },
+    backups: {
+        title: "Резервные копии",
+        render: renderBackupsPage
     }
 };
 

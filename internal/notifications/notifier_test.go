@@ -129,7 +129,8 @@ func seedOrderWithOutbox(t *testing.T, db *sql.DB, recipients []int64) int64 {
 
 	for _, recipientID := range recipients {
 		if _, err := db.Exec(
-			`INSERT INTO notification_outbox (order_id, recipient_id) VALUES (?, ?)`,
+			`INSERT INTO notification_outbox (order_id, recipient_id, next_attempt_at)
+			 VALUES (?, ?, '2000-01-01 00:00:00')`,
 			orderID,
 			recipientID,
 		); err != nil {
