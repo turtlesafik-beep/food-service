@@ -610,25 +610,37 @@ function renderDishesTable() {
 
         return `
             <tr>
-                <td>
-                    <div class="dish-name">${escapeHtml(dish.emoji)} ${escapeHtml(dish.name)}</div>
-                    <div class="muted small">${escapeHtml(dish.description)}</div>
-                    <span class="menu-type-badge menu-type-${escapeHtml(menuType)}">${escapeHtml(menuTypeLabel(menuType))}</span>
+                <td class="cell-primary" data-label="Блюдо">
+                    <div class="cell-value">
+                        <div class="dish-name">${escapeHtml(dish.emoji)} ${escapeHtml(dish.name)}</div>
+                        <div class="muted small">${escapeHtml(dish.description)}</div>
+                        <span class="menu-type-badge menu-type-${escapeHtml(menuType)}">${escapeHtml(menuTypeLabel(menuType))}</span>
+                    </div>
                 </td>
-                <td>${dish.weight_grams ? `${dish.weight_grams} г` : "—"}</td>
-                <td>${formatMoney(dish.price)}</td>
-                <td>${recipe}</td>
-                <td>${status}</td>
-                <td class="actions-cell">
-                    <button class="action-button" data-action="edit" data-id="${dish.id}">
-                        Редактировать
-                    </button>
-                    <button class="action-button" data-action="toggle" data-id="${dish.id}">
-                        ${published ? "Скрыть" : "Опубликовать"}
-                    </button>
-                    <button class="action-button action-danger" data-action="delete" data-id="${dish.id}">
-                        Удалить
-                    </button>
+                <td data-label="Вес">
+                    <div class="cell-value">${dish.weight_grams ? `${dish.weight_grams} г` : "—"}</div>
+                </td>
+                <td data-label="Цена">
+                    <div class="cell-value">${formatMoney(dish.price)}</div>
+                </td>
+                <td data-label="Рецепт">
+                    <div class="cell-value">${recipe}</div>
+                </td>
+                <td data-label="Статус">
+                    <div class="cell-value">${status}</div>
+                </td>
+                <td class="actions-cell" data-label="Действия">
+                    <div class="cell-value">
+                        <button class="action-button" data-action="edit" data-id="${dish.id}">
+                            Редактировать
+                        </button>
+                        <button class="action-button" data-action="toggle" data-id="${dish.id}">
+                            ${published ? "Скрыть" : "Опубликовать"}
+                        </button>
+                        <button class="action-button action-danger" data-action="delete" data-id="${dish.id}">
+                            Удалить
+                        </button>
+                    </div>
                 </td>
             </tr>
         `;
@@ -1626,15 +1638,21 @@ function renderIngredientsTable(ingredients) {
 
     tbody.innerHTML = ingredients.map((ingredient) => `
         <tr>
-            <td>${escapeHtml(ingredient.name)}</td>
-            <td>${unitLabel(ingredient.unit)}</td>
-            <td class="actions-cell">
-                <button class="action-button" data-action="edit" data-id="${ingredient.id}">
-                    Редактировать
-                </button>
-                <button class="action-button action-danger" data-action="delete" data-id="${ingredient.id}">
-                    Удалить
-                </button>
+            <td class="cell-primary" data-label="Название">
+                <div class="cell-value cell-title">${escapeHtml(ingredient.name)}</div>
+            </td>
+            <td data-label="Единица">
+                <div class="cell-value">${unitLabel(ingredient.unit)}</div>
+            </td>
+            <td class="actions-cell" data-label="Действия">
+                <div class="cell-value">
+                    <button class="action-button" data-action="edit" data-id="${ingredient.id}">
+                        Редактировать
+                    </button>
+                    <button class="action-button action-danger" data-action="delete" data-id="${ingredient.id}">
+                        Удалить
+                    </button>
+                </div>
             </td>
         </tr>
     `).join("");
@@ -1781,15 +1799,21 @@ function renderCategoriesTable(menu, categories) {
 
         return `
             <tr>
-                <td>${escapeHtml(category.name)}</td>
-                <td>${usage > 0 ? usage : "—"}</td>
-                <td class="actions-cell">
-                    <button class="action-button" data-action="edit" data-id="${category.id}" data-menu="${menu}">
-                        Редактировать
-                    </button>
-                    <button class="action-button action-danger" data-action="delete" data-id="${category.id}" data-menu="${menu}">
-                        Удалить
-                    </button>
+                <td class="cell-primary" data-label="Название">
+                    <div class="cell-value cell-title">${escapeHtml(category.name)}</div>
+                </td>
+                <td data-label="Блюд">
+                    <div class="cell-value">${usage > 0 ? usage : "—"}</div>
+                </td>
+                <td class="actions-cell" data-label="Действия">
+                    <div class="cell-value">
+                        <button class="action-button" data-action="edit" data-id="${category.id}" data-menu="${menu}">
+                            Редактировать
+                        </button>
+                        <button class="action-button action-danger" data-action="delete" data-id="${category.id}" data-menu="${menu}">
+                            Удалить
+                        </button>
+                    </div>
                 </td>
             </tr>
         `;
@@ -1983,21 +2007,37 @@ function renderOrdersTable(orders) {
 
         return `
             <tr>
-                <td>#${order.order_id}</td>
-                <td>${formatDate(order.created_at)}</td>
-                <td>${escapeHtml(order.customer_name || "—")}</td>
-                <td>${phone}</td>
-                <td>${order.item_count}</td>
-                <td>${formatMoney(order.total)}</td>
-                <td class="order-link-cell">${linkCell}</td>
-                <td class="actions-cell">
-                    <div class="order-row-actions">
-                        <button class="action-button" data-action="details" data-id="${order.order_id}">
-                            Подробнее
-                        </button>
-                        <button class="action-button action-danger" data-action="delete" data-id="${order.order_id}">
-                            Удалить
-                        </button>
+                <td class="cell-primary" data-label="Заказ">
+                    <div class="cell-value cell-title"><span class="order-number">#${order.order_id}</span></div>
+                </td>
+                <td data-label="Дата">
+                    <div class="cell-value">${formatDate(order.created_at)}</div>
+                </td>
+                <td data-label="Клиент">
+                    <div class="cell-value">${escapeHtml(order.customer_name || "—")}</div>
+                </td>
+                <td data-label="Телефон">
+                    <div class="cell-value">${phone}</div>
+                </td>
+                <td data-label="Позиции">
+                    <div class="cell-value">${order.item_count}</div>
+                </td>
+                <td data-label="Сумма">
+                    <div class="cell-value">${formatMoney(order.total)}</div>
+                </td>
+                <td class="order-link-cell" data-label="Ссылка">
+                    <div class="cell-value">${linkCell}</div>
+                </td>
+                <td class="actions-cell" data-label="Действия">
+                    <div class="cell-value">
+                        <div class="order-row-actions">
+                            <button class="action-button" data-action="details" data-id="${order.order_id}">
+                                Подробнее
+                            </button>
+                            <button class="action-button action-danger" data-action="delete" data-id="${order.order_id}">
+                                Удалить
+                            </button>
+                        </div>
                     </div>
                 </td>
             </tr>
@@ -2052,18 +2092,32 @@ async function openOrderDetails(orderId) {
 
         const items = order.items.map((item) => `
             <tr>
-                <td>${escapeHtml(item.dish_name)}</td>
-                <td>${item.weight_grams ? `${item.weight_grams} г` : "—"}</td>
-                <td>${item.quantity}</td>
-                <td>${formatMoney(item.unit_price)}</td>
-                <td>${formatMoney(item.line_total)}</td>
+                <td class="cell-primary" data-label="Блюдо">
+                    <div class="cell-value cell-title">${escapeHtml(item.dish_name)}</div>
+                </td>
+                <td data-label="Вес">
+                    <div class="cell-value">${item.weight_grams ? `${item.weight_grams} г` : "—"}</div>
+                </td>
+                <td data-label="Кол-во">
+                    <div class="cell-value">${item.quantity}</div>
+                </td>
+                <td data-label="Цена">
+                    <div class="cell-value">${formatMoney(item.unit_price)}</div>
+                </td>
+                <td data-label="Сумма">
+                    <div class="cell-value">${formatMoney(item.line_total)}</div>
+                </td>
             </tr>
         `).join("");
 
         const ingredients = order.ingredients.map((ingredient) => `
             <tr>
-                <td>${escapeHtml(ingredient.name)}</td>
-                <td>${formatQuantity(ingredient.quantity)} ${unitLabel(ingredient.unit)}</td>
+                <td class="cell-primary" data-label="Продукт">
+                    <div class="cell-value cell-title">${escapeHtml(ingredient.name)}</div>
+                </td>
+                <td data-label="Количество">
+                    <div class="cell-value">${formatQuantity(ingredient.quantity)} ${unitLabel(ingredient.unit)}</div>
+                </td>
             </tr>
         `).join("");
 

@@ -1623,3 +1623,516 @@ body.modal-open {
         max-width: 220px;
     }
 }
+
+/* ---------- Mobile adaptation ---------- */
+
+/* Navigation and touch targets */
+@media (max-width: 900px) {
+    .navigation {
+        gap: 6px;
+    }
+
+    .nav-button {
+        flex: 1 1 auto;
+        min-height: 42px;
+        text-align: center;
+    }
+
+    .category-group-head {
+        flex-wrap: wrap;
+    }
+}
+
+/* Tables become vertical cards: no wide rows and no horizontal scrolling */
+@media (max-width: 900px) {
+    .table-container {
+        padding: 0;
+        background: transparent;
+        border: none;
+        border-radius: 0;
+        overflow: visible;
+    }
+
+    .dishes-table,
+    .dishes-table tbody,
+    .dishes-table tr,
+    .dishes-table td {
+        display: block;
+        width: 100%;
+    }
+
+    .dishes-table thead {
+        display: none;
+    }
+
+    .dishes-table tbody {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+    }
+
+    .dishes-table tbody tr,
+    .dishes-table tbody tr:hover {
+        padding: 14px 16px;
+        background: var(--surface);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+    }
+
+    .dishes-table td,
+    .dishes-table th,
+    .dishes-table th:first-child,
+    .dishes-table td:first-child,
+    .dishes-table th:last-child,
+    .dishes-table td:last-child {
+        padding: 7px 0;
+        border: none;
+    }
+
+    .dishes-table td {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 14px;
+        font-size: 14px;
+    }
+
+    .dishes-table td + td {
+        border-top: 1px solid var(--border-subtle);
+    }
+
+    .dishes-table td::before {
+        content: attr(data-label);
+        flex: 0 0 92px;
+        padding-top: 1px;
+        color: var(--text-muted);
+        font-size: 10.5px;
+        font-weight: 600;
+        letter-spacing: 0.07em;
+        line-height: 1.8;
+        text-transform: uppercase;
+    }
+
+    .dishes-table td .cell-value {
+        flex: 1 1 auto;
+        min-width: 0;
+        text-align: right;
+        overflow-wrap: anywhere;
+    }
+
+    .dishes-table td.cell-primary {
+        display: block;
+        padding: 0 0 10px;
+    }
+
+    .dishes-table td.cell-primary::before {
+        display: none;
+    }
+
+    .dishes-table td.cell-primary .cell-value {
+        text-align: left;
+    }
+
+    .dishes-table .cell-title {
+        font-size: 15.5px;
+        font-weight: 600;
+        line-height: 1.4;
+    }
+
+    .dishes-table td.cell-primary + td {
+        border-top: none;
+    }
+
+    .dishes-table .dish-name {
+        font-size: 15.5px;
+        overflow-wrap: anywhere;
+    }
+
+    .dishes-table .actions-cell {
+        display: block;
+        padding-top: 12px;
+    }
+
+    .dishes-table .actions-cell::before {
+        display: block;
+        margin-bottom: 8px;
+    }
+
+    .dishes-table .actions-cell .cell-value {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        text-align: left;
+    }
+
+    .dishes-table .actions-cell .action-button {
+        flex: 1 1 auto;
+        min-height: 42px;
+        margin: 0;
+        padding: 9px 12px;
+        font-size: 13px;
+        white-space: normal;
+    }
+
+    .dishes-table .order-row-actions {
+        width: 100%;
+        gap: 8px;
+    }
+
+    .dishes-table .order-row-actions .action-button {
+        flex: 1 1 auto;
+    }
+
+    .dishes-table td.order-link-cell {
+        max-width: none;
+    }
+
+    .dishes-table td.order-link-cell .cell-value {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 6px;
+    }
+
+    .dishes-table td.order-link-cell .action-button {
+        margin: 0;
+    }
+
+    .dishes-table td.empty-cell {
+        display: block;
+        border: none;
+        text-align: center;
+    }
+
+    .dishes-table td.empty-cell::before {
+        display: none;
+    }
+
+    /* Compact tables inside the order modal */
+    .dishes-table.compact tbody tr {
+        padding: 10px 12px;
+    }
+
+    .dishes-table.compact td {
+        padding: 5px 0;
+    }
+
+    .dishes-table.compact td::before {
+        flex-basis: 76px;
+        line-height: 1.6;
+    }
+
+    .dishes-table.compact td.cell-primary {
+        padding-bottom: 8px;
+    }
+}
+
+/* Page toolbars, filters, search and pagination */
+@media (max-width: 720px) {
+    .main-content {
+        padding: 20px 14px 36px;
+    }
+
+    .header {
+        margin-bottom: 18px;
+        padding-bottom: 16px;
+    }
+
+    .header h1 {
+        font-size: 22px;
+    }
+
+    .page-actions {
+        flex-direction: column;
+        align-items: stretch;
+        gap: 10px;
+        margin-bottom: 16px;
+    }
+
+    .dishes-actions {
+        align-items: stretch;
+        justify-content: flex-start;
+    }
+
+    .dish-filters {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        width: 100%;
+    }
+
+    .dish-filters .filter-button:last-child:nth-child(odd) {
+        grid-column: 1 / -1;
+    }
+
+    .filter-button {
+        width: 100%;
+        min-height: 42px;
+        padding: 9px 10px;
+        white-space: normal;
+    }
+
+    #add-dish-button,
+    #add-ingredient-button,
+    .page-actions > .primary-button {
+        width: 100%;
+        min-height: 44px;
+    }
+
+    .search-form {
+        width: 100%;
+    }
+
+    .search-form input {
+        min-width: 0;
+        min-height: 44px;
+    }
+
+    .search-form .primary-button {
+        flex: 0 0 auto;
+        min-height: 44px;
+    }
+
+    .pagination {
+        gap: 8px;
+    }
+
+    .pagination .secondary-button {
+        flex: 1 1 0;
+        min-height: 44px;
+    }
+
+    .primary-button,
+    .secondary-button {
+        min-height: 42px;
+    }
+
+    .action-button {
+        min-height: 40px;
+        padding: 9px 12px;
+    }
+}
+
+@media (max-width: 480px) {
+    .search-form {
+        flex-direction: column;
+    }
+
+    .search-form .primary-button {
+        width: 100%;
+    }
+}
+
+/* Small screens: navigation, forms and modals */
+@media (max-width: 600px) {
+    .sidebar {
+        padding: 14px 12px;
+    }
+
+    .logo {
+        padding: 0 4px;
+        margin-bottom: 12px;
+        font-size: 17px;
+    }
+
+    .navigation {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 6px;
+    }
+
+    .nav-button {
+        width: 100%;
+        min-height: 42px;
+        padding: 10px 8px;
+        text-align: center;
+    }
+
+    .modal-overlay {
+        align-items: flex-start;
+        padding: 8px;
+    }
+
+    .modal {
+        width: 100%;
+        max-height: calc(100vh - 16px);
+        max-height: calc(100dvh - 16px);
+        border-radius: 14px;
+    }
+
+    .modal-form {
+        flex: 1 1 auto;
+        min-height: 0;
+    }
+
+    .modal-header {
+        gap: 10px;
+        padding: 14px 16px;
+    }
+
+    .modal-header h2 {
+        min-width: 0;
+        font-size: 16.5px;
+        line-height: 1.35;
+        overflow-wrap: anywhere;
+    }
+
+    .modal-close {
+        flex-shrink: 0;
+        width: 40px;
+        height: 40px;
+    }
+
+    .modal-body {
+        padding: 16px;
+    }
+
+    .modal-error {
+        margin: 0 16px 12px;
+    }
+
+    .modal-footer {
+        gap: 8px;
+        padding: 12px 16px;
+    }
+
+    .modal-footer .primary-button,
+    .modal-footer .secondary-button {
+        flex: 1 1 130px;
+        min-height: 44px;
+    }
+
+    .form-field input,
+    .form-field textarea,
+    .form-field select,
+    .search-form input,
+    .recipe-row input,
+    .recipe-row select {
+        font-size: 16px;
+    }
+
+    .form-field textarea {
+        min-height: 96px;
+    }
+
+    .form-field label {
+        font-size: 12.5px;
+    }
+
+    .checkbox-label {
+        min-height: 40px;
+    }
+
+    .checkbox-label input {
+        width: 18px;
+        height: 18px;
+        flex-shrink: 0;
+    }
+
+    .recipe-row {
+        grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) 44px;
+        gap: 8px;
+    }
+
+    .recipe-row .recipe-name {
+        grid-column: 1 / -1;
+    }
+
+    .recipe-row .recipe-remove {
+        width: 44px;
+        height: 44px;
+        justify-self: end;
+        font-size: 20px;
+    }
+
+    .recipe-row input,
+    .recipe-row select {
+        min-width: 0;
+        min-height: 44px;
+    }
+
+    .section-heading {
+        flex-wrap: wrap;
+        gap: 10px;
+    }
+
+    .section-heading .secondary-button {
+        flex: 1 1 auto;
+    }
+
+    .dish-photo-editor {
+        gap: 14px;
+    }
+
+    .dish-photo-preview {
+        width: 240px;
+        max-width: 100%;
+    }
+
+    .dish-photo-controls {
+        width: 100%;
+    }
+
+    .dish-photo-controls input[type="file"] {
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .dish-photo-controls .secondary-button {
+        width: 100%;
+        min-height: 44px;
+    }
+
+    .emoji-trigger {
+        width: 100%;
+        min-width: 0;
+        min-height: 48px;
+    }
+
+    .emoji-reset {
+        min-height: 44px;
+    }
+
+    .emoji-category {
+        min-height: 38px;
+    }
+
+    .emoji-picker-footer .secondary-button {
+        min-height: 42px;
+    }
+
+    .order-meta {
+        gap: 8px;
+        padding: 14px;
+        font-size: 13.5px;
+    }
+
+    .order-link-block {
+        padding: 12px 14px;
+    }
+
+    .order-link-block .action-button {
+        min-height: 42px;
+    }
+
+    .order-total {
+        font-size: 15px;
+    }
+
+    .order-total strong {
+        font-size: 21px;
+    }
+
+    .toast-root {
+        right: 12px;
+        bottom: 12px;
+        left: 12px;
+        max-width: none;
+    }
+
+    .toast {
+        font-size: 13px;
+    }
+}
+
